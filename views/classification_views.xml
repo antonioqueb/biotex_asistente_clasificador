@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Pantalla de trabajo (OWL) del Asistente Clasificador -->
+    <record id="action_clasificador_workspace" model="ir.actions.client">
+        <field name="name">Asistente Clasificador</field>
+        <field name="tag">biotex_asistente_clasificador.workspace</field>
+    </record>
+
+    <menuitem id="menu_clasificador_workspace" name="Asistente Clasificador" parent="biotex_catalog.menu_catalog_root" sequence="20"
+              action="action_clasificador_workspace" groups="biotex_catalog.group_catalog_classifier"/>
+    <menuitem id="menu_stock_clasificador_workspace" name="Asistente Clasificador"
+              parent="stock.menu_stock_inventory_control" sequence="3"
+              action="action_clasificador_workspace" groups="biotex_catalog.group_catalog_classifier"/>
+
+    <!-- Sesiones: la modalidad y la marca/folio por línea, visibles en la consulta y en la auditoría -->
+    <record id="view_biotex_classification_session_list_clasificador" model="ir.ui.view">
+        <field name="name">biotex.classification.session.list.clasificador</field>
+        <field name="model">biotex.classification.session</field>
+        <field name="inherit_id" ref="biotex_catalog.view_biotex_classification_session_list"/>
+        <field name="arch" type="xml">
+            <field name="brand_id" position="after">
+                <field name="brand_per_line" string="Marca por producto" optional="show"/>
+            </field>
+        </field>
+    </record>
+
+    <record id="view_biotex_classification_session_form_clasificador" model="ir.ui.view">
+        <field name="name">biotex.classification.session.form.clasificador</field>
+        <field name="model">biotex.classification.session</field>
+        <field name="inherit_id" ref="biotex_catalog.view_biotex_classification_session_form"/>
+        <field name="arch" type="xml">
+            <field name="brand_id" position="attributes">
+                <attribute name="invisible">brand_per_line</attribute>
+            </field>
+            <field name="brand_id" position="after">
+                <field name="brand_per_line"/>
+                <field name="pending_count" invisible="not brand_per_line"/>
+            </field>
+            <xpath expr="//page[@name='lines']//list/field[@name='reference']" position="before">
+                <field name="brand_id" string="Marca" readonly="1" column_invisible="not parent.brand_per_line"/>
+            </xpath>
+            <xpath expr="//page[@name='lines']//list/field[@name='consecutive']" position="after">
+                <field name="folio" readonly="1" column_invisible="not parent.brand_per_line"/>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="view_biotex_classification_session_search_clasificador" model="ir.ui.view">
+        <field name="name">biotex.classification.session.search.clasificador</field>
+        <field name="model">biotex.classification.session</field>
+        <field name="inherit_id" ref="biotex_catalog.view_biotex_classification_session_search"/>
+        <field name="arch" type="xml">
+            <filter name="confirmed" position="after">
+                <separator/>
+                <filter name="per_line" string="Marca por producto" domain="[('brand_per_line', '=', True)]"/>
+                <filter name="per_session" string="Marca por sesión" domain="[('brand_per_line', '=', False)]"/>
+            </filter>
+        </field>
+    </record>
+</odoo>

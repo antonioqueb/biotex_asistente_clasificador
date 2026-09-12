@@ -1,0 +1,54 @@
+// Asistente Clasificador: solo lo que cambia respecto al asistente base (mismos tokens --bcw-*).
+
+.o_bac {
+    // paso 1: tres tarjetas en lugar de cuatro
+    .o_bac_levels { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .o_bac_seg_pending { opacity: .45; letter-spacing: 1px; }
+
+    // paso 2: fila en dos renglones (nombre / badges) para no saturar una sola línea
+    .o_bac_cell_name { min-width: 280px; }
+    .o_bac_name { font-weight: 500; line-height: 1.35; }
+    .o_bac_badges { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: 4px; }
+    .o_bac_badges .badge { font-size: 11px; padding: 2px 8px; }
+    .o_bac_badge_info { background: var(--bcw-brand-soft); color: #1d4ed8; }
+    .o_bac_badge_done { background: var(--bcw-group-soft); color: #15803d; }
+    .o_bac_badge_pending { background: var(--bcw-classifier-soft); color: #c2410c; }
+    .o_bac_badges .o_bcw_badge i { margin-right: 4px; }
+    .o_bac_code_pending {
+        font-family: var(--o-font-family-monospace, monospace); font-size: 12px; white-space: nowrap;
+        color: #c2410c; border: 1px dashed #fdba74; border-radius: 6px; padding: 0 6px; background: #fff7ed;
+    }
+    .o_bac_text_pending { color: #c2410c; }
+    .o_bac_w_act { width: 230px; white-space: nowrap; }
+    .o_bac_actions { display: flex; align-items: center; gap: 6px; }
+    .o_bac_edit { width: auto; padding: 0 10px; gap: 6px; font-weight: 600; }
+    .o_bac_table tbody tr.o_bac_row_in_session td { background: #f8fafc; }
+    .o_bac_table tbody tr.o_bac_row_in_session:hover td { background: #f1f5f9; }
+    .o_bac_table tbody tr.o_bcw_row_reclassified td { background: #fef3f2; }
+
+    // paso 3: solo lectura
+    .o_bac_table_done td { vertical-align: top; }
+    .o_bac_brand_code { color: var(--bcw-brand); font-weight: 700; }
+    .o_bac_pending {
+        margin-top: 12px; padding: 10px 12px; border-radius: var(--bcw-radius);
+        background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; font-size: 12.5px;
+    }
+    .o_bac_pending_head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    .o_bac_pending_list { margin: 6px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; }
+    .o_bac_pending_list li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+}
+
+// modal de edición: bloque Marca
+.o_bcw_modal .o_bac_brand {
+    padding: 10px 12px; border-radius: 8px; background: var(--bcw-brand-soft, #dbeafe);
+    .o_bcw_label { color: #1d4ed8; }
+    .o_bac_brand_current { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 4px; }
+    .o_bac_brand_folio { font-size: 12px; color: var(--bcw-ink, #1d2939); }
+    .o_bac_brand_row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; }
+    .o_bac_brand_input { flex: 1 1 260px; min-width: 0; position: relative; }
+    .o_bac_brand_confirm { flex: 0 0 auto; white-space: nowrap; }
+    .o_bac_chip_pending { background: #fff; border: 1px dashed var(--bcw-brand, #2563eb); color: #1d4ed8; }
+    .o_bac_brand_lookup { max-height: 260px; overflow-y: auto; }
+    .o_bac_brand_code { color: var(--bcw-brand, #2563eb); font-weight: 700; }
+    .o_bac_brand_create { color: #1d4ed8; font-weight: 600; }
+}

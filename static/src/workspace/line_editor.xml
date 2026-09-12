@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <!-- El modal base más el campo Marca (debajo del nombre) y el texto del encabezado. -->
+    <t t-name="biotex_asistente_clasificador.LineEditorDialog" t-inherit="biotex_catalog.LineEditorDialog" t-inherit-mode="primary">
+        <xpath expr="//div[@class='o_bcw_modal_ref']/small" position="replace">
+            <small class="o_bcw_help">
+                <t t-if="line.classified">Referencia final: el folio se reservó al confirmar la marca.</t>
+                <t t-else="">Referencia pendiente: el folio se reserva al confirmar la marca.</t>
+            </small>
+        </xpath>
+        <xpath expr="//textarea[@id='bcw_editor_name']/.." position="after">
+            <div class="o_bcw_field o_bac_brand" aria-label="Marca del producto">
+                <label class="o_bcw_label" for="bac_editor_brand">Marca <span class="o_bcw_req">*</span></label>
+
+                <div class="o_bac_brand_current" t-if="brandConfirmedId">
+                    <span class="o_bcw_chip o_bcw_chip_ok"><i class="fa fa-check" aria-hidden="true"/> <t t-esc="brandConfirmedLabel"/></span>
+                    <span t-if="line.classified" class="o_bcw_mono o_bac_brand_folio">folio <t t-esc="line.folio"/></span>
+                </div>
+
+                <div class="o_bac_brand_row">
+                    <div class="o_bac_brand_input">
+                        <span t-if="brandPendingId and brandPendingId !== brandConfirmedId" class="o_bcw_chip o_bac_chip_pending">
+                            <i class="fa fa-bookmark-o" aria-hidden="true"/>
+                            <span t-esc="state.brand.pendingLabel"/>
+                            <button t-if="!props.readonly" type="button" class="o_bcw_chip_x" aria-label="Quitar marca elegida" t-on-click="clearPendingBrand"><i class="fa fa-times"/></button>
+                        </span>
+                        <input t-else="" id="bac_editor_brand" type="text" class="o_bcw_input" autocomplete="off"
+                               t-att-placeholder="brandConfirmedId ? 'Cambiar de marca: buscar o crear...' : 'Buscar o crear marca...'"
+                               t-att-readonly="props.readonly" t-att-value="state.brand.query"
+                               t-on-focus="openBrands" t-on-input="onBrandQuery" t-on-blur="closeBrands" t-on-keydown="onBrandKeydown"/>
+                        <div class="o_bcw_lookup o_bac_brand_lookup" t-if="state.brand.open and (state.brand.options.length or canCreateBrand or state.brand.loading)">
+                            <div t-if="state.brand.loading" class="o_bcw_lookup_item o_bcw_muted"><i class="fa fa-refresh fa-spin me-1"/>Leyendo el catálogo de marcas...</div>
+                            <button t-foreach="state.brand.options" t-as="b" t-key="b.id" type="button" class="o_bcw_lookup_item"
+                                    t-on-pointerdown.prevent="noop" t-on-click="() => this.pickBrand(b)">
+                                <span class="o_bcw_mono o_bac_brand_code" t-esc="b.code"/> <span t-esc="b.name"/>
+                                <small t-if="b.used" class="o_bcw_muted ms-1">· ya usada en este clasificador</small>
+                            </button>
+                            <button t-if="canCreateBrand and !state.brand.loading" type="button" class="o_bcw_lookup_item o_bac_brand_create"
+                                    t-on-pointerdown.prevent="noop" t-on-click="createBrand">
+                                <i class="fa fa-plus me-1" aria-hidden="true"/>Crear marca «<t t-esc="state.brand.query.trim()"/>»
+                            </button>
+                        </div>
+                    </div>
+                    <button t-if="!props.readonly" type="button" class="btn btn-primary btn-sm o_bac_brand_confirm"
+                            t-att-disabled="!brandPendingId or brandPendingId === brandConfirmedId or state.brand.confirming"
+                            t-on-click="confirmBrand">
+                        <i t-att-class="state.brand.confirming ? 'fa fa-circle-o-notch fa-spin' : 'fa fa-key'" aria-hidden="true"/>
+                        <t t-esc="brandConfirmedId ? ' Cambiar marca y reservar folio' : ' Confirmar marca y reservar folio'"/>
+                    </button>
+                </div>
+
+                <small class="o_bcw_help" t-esc="brandHelp"/>
+                <small t-if="!brandConfirmedId and brandCatalogLabel" class="o_bcw_help">Marca actual en la ficha: <strong t-esc="brandCatalogLabel"/> (sugerida; confírmala o elige otra).</small>
+                <small t-if="line.reclassify_from" class="o_bcw_warn"><i class="fa fa-exclamation-circle me-1" aria-hidden="true"/>Clave actual <span class="o_bcw_mono" t-esc="line.reclassify_from"/>: al generar claves recibirá la nueva y su numeración cambiará.</small>
+            </div>
+        </xpath>
+    </t>
+
+</templates>
