@@ -9,7 +9,7 @@ import { referenceTones } from "@biotex_catalog/classification/reference";
 const MODEL = "biotex.classification.session";
 
 /**
- * Modal de edición del Clasificador por Grupos: el del asistente base más el campo **Marca**.
+ * Modal de edición del Clasificador Global: el del asistente base más el campo **Marca**.
  *
  * La marca se elige de un catálogo que se relee cada vez que se abre la lista (una marca creada en otra
  * pestaña aparece sin recargar) y se puede crear al vuelo. "Confirmar marca" es la acción que reserva el

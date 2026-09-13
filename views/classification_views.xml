@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Pantalla de trabajo (OWL) del Clasificador por Grupos -->
+    <!-- Pantalla de trabajo (OWL) del Clasificador Global -->
     <record id="action_clasificador_workspace" model="ir.actions.client">
-        <field name="name">Clasificador por Grupos</field>
+        <field name="name">Clasificador Global</field>
         <field name="tag">biotex_asistente_clasificador.workspace</field>
     </record>
 
-    <menuitem id="menu_clasificador_workspace" name="Clasificador por Grupos" parent="biotex_catalog.menu_catalog_root" sequence="20"
+    <menuitem id="menu_clasificador_workspace" name="Clasificador Global" parent="biotex_catalog.menu_catalog_root" sequence="20"
               action="action_clasificador_workspace" groups="biotex_catalog.group_catalog_classifier"/>
-    <menuitem id="menu_stock_clasificador_workspace" name="Clasificador por Grupos"
+    <menuitem id="menu_stock_clasificador_workspace" name="Clasificador Global"
               parent="stock.menu_stock_inventory_control" sequence="3"
               action="action_clasificador_workspace" groups="biotex_catalog.group_catalog_classifier"/>
 

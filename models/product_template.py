@@ -6,7 +6,7 @@ class ProductTemplate(models.Model):
     _inherit = 'product.template'
 
     def action_open_classification_session(self):
-        """"Ver clasificación en curso": una sesión con marca por producto se abre en el Clasificador por Grupos (antes Asistente Clasificador."""
+        """"Ver clasificación en curso": una sesión con marca por producto se abre en el Clasificador Global (antes Asistente Clasificador."""
         self.ensure_one()
         session = self.biotex_classification_session_id
         if session and session.brand_per_line:

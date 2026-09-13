@@ -1,4 +1,4 @@
-# Clasificador por Grupos — especificación implementada
+# Clasificador Global — especificación implementada
 
 Módulo `biotex_asistente_clasificador` 19.0.1.1.0 · 12 de septiembre de 2026 · requiere `biotex_catalog` 19.0.3.5.3.
 
@@ -107,7 +107,7 @@ Con usuario **Clasificador de catálogo** en QA:
 | H | Crear una marca nueva desde el modal y confirmarla. | Se crea con código sugerido y reserva folio de su propia llave. |
 | I | Generar claves con un producto sin marca. | Botón deshabilitado; el servidor rechaza si se fuerza. |
 | J | Dos usuarios confirman la misma marca a la vez (o `check_folio_concurrency` en QA). | Folios distintos y consecutivos. |
-| K | Abrir "Clasificador Global" (base). | No lista ni abre las sesiones de marca por producto; su flujo no cambia. |
+| K | Abrir "Clasificador por Grupos" (base). | No lista ni abre las sesiones de marca por producto; su flujo no cambia. |
 
 ## Verificación automatizada
 - `tests/test_clasificador.py`: 13 casos (llave base, folio por llave, contador compartido, caso A, caso B, otra clasificación,
