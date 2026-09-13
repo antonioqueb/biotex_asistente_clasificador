@@ -1,4 +1,4 @@
-"""Asistente Clasificador: marca y folio por producto, casos A/B, paso 3 y convivencia con el asistente base."""
+"""Clasificador por Grupos: marca y folio por producto, casos A/B, paso 3 y convivencia con el asistente base."""
 from odoo.exceptions import UserError
 from odoo.tests import TransactionCase, tagged
 from odoo.tests.common import new_test_user

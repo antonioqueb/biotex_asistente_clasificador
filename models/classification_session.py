@@ -1,4 +1,4 @@
-"""Asistente Clasificador: la misma sesión de clasificación masiva, con la marca y el folio por producto.
+"""Clasificador por Grupos (módulo biotex_asistente_clasificador): la misma sesión de clasificación masiva, con la marca y el folio por producto.
 
 Convive con el asistente de clasificación original (`biotex_catalog`): una sesión con
 ``brand_per_line`` la abre y opera este asistente; las demás siguen el flujo anterior sin cambios.
@@ -37,7 +37,7 @@ class ClassificationSession(models.Model):
 
     brand_per_line = fields.Boolean(
         string='Marca por producto', default=False, readonly=True, index=True,
-        help='Sesión del Asistente Clasificador: la marca y el folio se asignan por producto al editarlo; '
+        help='Sesión del Clasificador por Grupos: la marca y el folio se asignan por producto al editarlo; '
              'la sesión solo fija grupo, familia y clasificador.')
     pending_count = fields.Integer(string='Sin marca o folio', compute='_compute_pending_count')
 
@@ -127,7 +127,7 @@ class ClassificationSession(models.Model):
         return {
             'type': 'ir.actions.client',
             'tag': WORKSPACE_ACTION,
-            'name': 'Asistente Clasificador',
+            'name': 'Clasificador por Grupos',
             'context': {'biotex_session_id': self.id},
         }
 
@@ -432,7 +432,7 @@ class ClassificationSessionLine(models.Model):
 
     def write(self, vals):
         if 'brand_id' in vals and any(line.session_id.brand_per_line for line in self):
-            raise UserError('La marca se confirma desde Editar en el Asistente Clasificador: es la que reserva el folio.')
+            raise UserError('La marca se confirma desde Editar en el Clasificador por Grupos: es la que reserva el folio.')
         return super().write(vals)
 
     # ------------------------------------------------------------------ datos para la pantalla

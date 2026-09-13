@@ -11,7 +11,7 @@ const PAGE_SIZE = 20;
 const CONTEXT = { clasificador: true };
 
 /**
- * Asistente Clasificador: variante del asistente de clasificación masiva.
+ * Clasificador por Grupos: variante del asistente de clasificación masiva.
  *
  * - Paso 1: grupo, familia y clasificador (sin marca). Los selectores releen el catálogo al abrirse.
  * - Paso 2: cada resultado muestra el estado de catálogo (badge `biotex_class_state`) y el de sesión,

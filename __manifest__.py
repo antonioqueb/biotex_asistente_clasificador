@@ -1,7 +1,8 @@
 {
-    'name': 'Asistente Clasificador',
+    'name': 'Clasificador por Grupos',
     'summary': 'Variante del asistente de clasificación masiva: marca y folio por producto, clasificación desde el paso 2, paso 3 de solo lectura ordenado por marca y folio, catálogos frescos en cada selector',
-    'version': '19.0.1.0.0',
+    'version': '19.0.1.1.0',
+    'description': 'Clasificador por Grupos: la sesión fija grupo, familia y clasificador; la marca y el folio se asignan por producto al confirmar la marca. Convive con el Clasificador Global de biotex_catalog.',
     'category': 'Distribución de insumos',
     'author': 'Alphaqueb Consulting SAS',
     'license': 'LGPL-3',
