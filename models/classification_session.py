@@ -270,7 +270,7 @@ class ClassificationSession(models.Model):
         if not line:
             data = self.workspace_add_products([product_id])
             if data.get('skipped'):
-                raise UserError('No se puede editar: %s' % '; '.join(data['skipped']))
+                raise UserError('No se puede editar: %s ya está en otra clasificación en curso. Termínela o cancélela antes.' % '; '.join(data['skipped']))
             line = self.line_ids.filtered(lambda l: l.product_id.id == product_id)[:1]
         if not line:
             raise UserError('El producto ya no existe o no es visible para este usuario.')
