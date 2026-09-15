@@ -283,7 +283,7 @@
                     <span class="o_bcw_num o_bcw_tone_classifier">3</span>
                     <div class="o_bcw_stage_titles">
                         <h2>Productos clasificados de la sesión</h2>
-                        <p>Solo lectura: marca y folio ya asignados, ordenados por marca y folio consecutivo. Se actualiza con cada edición.</p>
+                        <p>Marca y folio ya asignados, ordenados por marca y folio consecutivo. Se actualiza con cada edición; el lápiz abre el producto para editarlo.</p>
                     </div>
                     <div class="o_bcw_stage3_meta" t-if="classificationComplete">
                         <div class="o_bcw_meta_line">
@@ -327,6 +327,7 @@
                                         <th class="o_bcw_w_ref2">Referencia completa</th>
                                         <th class="o_bcw_w_uom">Unidad de medida</th>
                                         <th class="o_bcw_w_img">Imagen</th>
+                                        <th class="o_bac_w_act3">Acciones</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -357,6 +358,14 @@
                                             <span t-else="" class="o_bcw_img_btn o_bcw_img_none" title="Sin imagen" role="img" aria-label="Sin imagen">
                                                 <i class="fa fa-picture-o" aria-hidden="true"/>
                                             </span>
+                                        </td>
+                                        <td class="o_bac_w_act3">
+                                            <!-- mismo modal que en el paso 2 (editLine): al retomar una sesión el paso 3 sigue siendo editable -->
+                                            <button type="button" class="o_bcw_icon_btn o_bac_edit3" t-att-disabled="confirmed or state.busy"
+                                                    t-att-title="confirmed ? 'Sesión aplicada: solo consulta' : 'Editar producto'"
+                                                    t-att-aria-label="'Editar ' + (line.new_name || line.old_name)" t-on-click="() => this.editLine(line)">
+                                                <i class="fa fa-pencil" aria-hidden="true"/>
+                                            </button>
                                         </td>
                                     </tr>
                                 </tbody>

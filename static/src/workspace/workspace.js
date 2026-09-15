@@ -17,7 +17,8 @@ const CONTEXT = { clasificador: true };
  * - Paso 2: cada resultado muestra el estado de catálogo (badge `biotex_class_state`) y el de sesión,
  *   con las acciones Ver imágenes, Editar y +Agregar. Editar clasifica sin pasar por +Agregar y es
  *   donde se confirma la marca (que reserva el folio). No hay acción de eliminar.
- * - Paso 3: solo lectura, ordenado por marca y folio; se refresca con cada edición.
+ * - Paso 3: ordenado por marca y folio; se refresca con cada edición. La columna Acciones abre el mismo
+ *   modal de edición (editLine), también al retomar una sesión sin terminar.
  */
 export class BiotexClasificadorWorkspace extends BiotexClassificationWorkspace {
     static template = "biotex_asistente_clasificador.Workspace";
@@ -243,7 +244,7 @@ export class BiotexClasificadorWorkspace extends BiotexClassificationWorkspace {
         });
     }
 
-    // ================================================================= paso 3: solo lectura
+    // ================================================================= paso 3: clasificados (editables con el lápiz)
     /** Productos con marca y folio, por marca y dentro de cada marca por folio ascendente. */
     get classifiedLines() {
         return this.lines.filter((line) => line.classified).sort((a, b) =>

@@ -74,7 +74,7 @@ function applyInheritance(window, xmlSources) {
         reclassified: false, state: 'draft', brand_name: '', measure: '', barcode: '', detail_filled: 0, uom_locked: false, product_uom_id: 1,
         product_uom_name: 'Unidades', images: [], brand_id: false, brand_code: '', brand_short: '', line_class_code: '', pending_code: `${base}-????-??`,
         display_code: `${base}-????-??`, folio: '', folio_number: 0, classified: false, same_classification: false, class_state: 'unclassified',
-        missing: 'marca', suggested_brand_id: false, suggested_brand_name: '', product_reference: '', ...extra,
+        missing: 'marca', suggested_brand_id: false, suggested_brand_name: '', product_reference: '', session_root: base, product_root: '', root_mismatch: false, ...extra,
     });
     const lines = [
         line(1, { brand_id: 5, brand_code: 'ZZZZ', brand_short: 'Zeta', consecutive: 1, reference: `${base}-ZZZZ-01`, display_code: `${base}-ZZZZ-01`, folio: '01', folio_number: 1, classified: true, line_class_code: `${base}-ZZZZ` }),
@@ -102,7 +102,7 @@ function applyInheritance(window, xmlSources) {
             if (method === 'biotex_get_tree') { treeReads++; return tree; }
             if (method === 'workspace_search_products') return { total: records.length, offset: 0, limit: 20, records };
             if (method === 'clasificador_edit_product') return { line_id: 4, session: session() };
-            if (method === 'workspace_line_detail') return { line: { ...lines[3], photos: [], country_ids: [], equipment_ids: [], specialty_ids: [], measure_data: [], presentation_data: [] },
+            if (method === 'workspace_line_detail') return { line: { ...(w.detailLine || lines[3]), photos: [], country_ids: [], equipment_ids: [], specialty_ids: [], measure_data: [], presentation_data: [] },
                 catalogs: { uoms: [{ id: 1, name: 'Unidades' }], package_types: [], countries: [], brands: [], specialties: [], contents: [], measure_types: [] },
                 classification_brand_id: false, classification_brand_name: '', brand_manufacturer_id: false, brand_manufacturer_name: '',
                 brand_hints: [4], pending_code: `${base}-????-??`, session_code: base };
@@ -111,6 +111,11 @@ function applyInheritance(window, xmlSources) {
                 const l = lines[3]; Object.assign(l, { brand_id: kwargs?.brand_id ?? args[2], brand_code: 'AAAA', brand_short: 'Alfa', brand_name: 'AAAA · Alfa', consecutive: 3, reference: `${base}-AAAA-03`, display_code: `${base}-AAAA-03`, folio: '03', folio_number: 3, classified: true, line_class_code: `${base}-AAAA` });
                 return { session: session(), line: { ...l } };
             }
+            if (method === 'clasificador_reserve_folio') {
+                const l = w.detailLine; Object.assign(l, { consecutive: 1, reference: `${base}-AAAA-01`, display_code: `${base}-AAAA-01`, folio: '01', folio_number: 1, root_mismatch: false, product_root: base, session_root: base });
+                return { session: session(), line: { ...l } };
+            }
+            if (method === 'workspace_update_line') return session();
             throw new Error('RPC no simulado: ' + method);
         } },
         action: { doAction() {} }, notification: { add: (m) => w.notifications.push(m) },
@@ -180,7 +185,17 @@ function applyInheritance(window, xmlSources) {
     ws.goStage(3); await tick();
     const done = [...doc.querySelectorAll('.o_bac_table_done tbody tr')].map((tr) => tr.children[3].textContent.trim());
     assert.deepEqual(done, [`${base}-AAAA-01`, `${base}-AAAA-02`, `${base}-ZZZZ-01`], 'orden por marca y folio');
-    assert.ok(!doc.querySelector('.o_bac_table_done input, .o_bac_table_done select, .o_bac_table_done .o_bcw_grip, .o_bac_table_done .fa-pencil, .o_bac_table_done .fa-trash-o'), 'sin edición, borrado ni arrastre');
+    assert.ok(!doc.querySelector('.o_bac_table_done input, .o_bac_table_done select, .o_bac_table_done .o_bcw_grip, .o_bac_table_done .fa-trash-o'), 'sin edición en línea, borrado ni arrastre');
+    // cambio 1: columna Acciones con el lápiz (mismo modal que el paso 2, precargado con la línea de la fila)
+    assert.match(doc.querySelector('.o_bac_table_done thead').textContent, /Acciones/);
+    const pencils = doc.querySelectorAll('.o_bac_table_done tbody .o_bac_edit3 .fa-pencil');
+    assert.equal(pencils.length, 3, 'un lápiz por producto clasificado');
+    const dialogsBefore = w.dialogs.length;
+    doc.querySelectorAll('.o_bac_table_done tbody .o_bac_edit3')[1].click(); await tick();
+    assert.equal(w.dialogs.length, dialogsBefore + 1);
+    assert.equal(w.dialogs.at(-1).component.name, 'BiotexClasificadorLineEditorDialog', 'el lápiz del paso 3 abre el modal de edición');
+    assert.equal(w.dialogs.at(-1).props.lineId, 2, 'precargado con la línea de la fila (AAAA-02)');
+    assert.equal(w.dialogs.at(-1).props.classCode, `${base}-AAAA-02`);
     assert.match(doc.querySelector('.o_bac_pending').textContent, /1 producto\(s\) sin marca/);
     assert.equal(doc.querySelector('.o_bcw_foot .btn-primary').disabled, true, 'Generar claves bloqueado con pendientes');
     // refresco en vivo: una edición devuelve la sesión y el paso 3 se reubica solo
@@ -226,7 +241,75 @@ function applyInheritance(window, xmlSources) {
     assert.match(doc.querySelector('.o_bcw_modal_ref').textContent, /CE-TCL-EKG-AAAA-03/, 'la referencia final aparece al momento');
     assert.match(doc.querySelector('.o_bac_brand_current').textContent, /folio 03/);
     assert.equal(doc.querySelector('#bac_editor_brand').readOnly, false, 'la marca sigue editable');
+
+    // ------------------------------------------------------------ cambio 3: "Unidades y empaques" en una sola tabla
+    assert.ok(!doc.querySelector('[aria-label="Empacados de productos y códigos de barras"]'), 'la sección de empacados aparte desaparece');
+    assert.ok(!doc.querySelector('.o_bcw_grid #bcw_editor_uom'), 'la unidad indivisible deja de ser un campo suelto');
+    const units = doc.querySelector('[aria-label="Unidades y empaques"]');
+    assert.ok(units, 'sección unificada');
+    assert.match(units.querySelector('thead').textContent, /Tipo de empaque.*Cantidad \(en Unidades\).*Código de barras/s);
+    const baseRow = units.querySelector('tbody tr');
+    assert.ok(baseRow.classList.contains('o_bac_unit_base'), 'la primera fila es la unidad base');
+    assert.match(baseRow.children[0].textContent, /Unidades · Unidad base/);
+    assert.ok(baseRow.querySelector('.fa-key'), 'ícono de llave');
+    assert.ok(!baseRow.querySelector('select'), 'la unidad base se muestra como texto fijo');
+    const baseQty = baseRow.children[1].querySelector('input');
+    assert.equal(baseQty.disabled, true); assert.equal(baseQty.value, '1');
+    const baseBarcode = baseRow.querySelector('.o_bac_unit_barcode');
+    assert.equal(baseBarcode.readOnly, false, 'el código de barras de la unidad base sí se edita');
+    baseBarcode.value = '7501234567890'; baseBarcode.dispatchEvent(new w.Event('input')); await tick();
+    assert.equal(editor.state.draft.barcode, '7501234567890');
+    assert.ok(baseRow.querySelector('.o_bac_unit_lock .fa-lock') && !baseRow.querySelector('.fa-trash'), 'candado en vez de eliminar');
+    // la unidad base sigue pudiéndose cambiar (sin movimientos) con "Cambiar unidad"
+    baseRow.querySelector('.o_bac_unit_change').click(); await tick();
+    assert.ok(units.querySelector('tr.o_bac_unit_base select#bcw_editor_uom'), 'el selector aparece dentro de la fila base');
+    editor.cancelUomEdit(); await tick();
+    assert.ok(!units.querySelector('tr.o_bac_unit_base select'));
+    // empacados: debajo de la fila base, con su eliminar, y "Agregar empacado" al final de la misma tabla
+    units.querySelector('.o_bac_add_pack').click(); await tick();
+    const rowsU = [...units.querySelectorAll('tbody tr')];
+    assert.equal(rowsU.length, 2);
+    assert.ok(rowsU[0].classList.contains('o_bac_unit_base') && rowsU[1].classList.contains('o_bac_unit_pack'), 'la fila base va siempre primero');
+    assert.ok(rowsU[1].querySelector('select') && rowsU[1].querySelector('.fa-trash'), 'empacado con tipo por combo y eliminar');
+    assert.match(rowsU[1].children[1].textContent, /Unidades/, 'cantidad en la unidad base');
     editorApp.destroy();
+
+    // fila base bloqueada por movimientos de inventario: sin "Cambiar unidad", con el mensaje de conservación
+    w.detailLine = line(4, { uom_locked: true });
+    const lockedApp = new w.owl.App(w.Editor, { templates, dev: true, props: { close() {}, lineId: 4, sessionId: 7, classCode: `${base}-????-??`, readonly: false, onSaved() {}, onBrandChanged() {} } });
+    const lockedEditor = await lockedApp.mount(w.document.body); await tick();
+    const lockedRow = doc.querySelector('[aria-label="Unidades y empaques"] tbody tr.o_bac_unit_base');
+    assert.ok(!lockedRow.querySelector('.o_bac_unit_change'), 'con movimientos no se ofrece cambiar la unidad');
+    assert.match(lockedRow.textContent, /esa unidad se conserva/);
+    lockedEditor.startUomEdit(); await tick();
+    assert.ok(!lockedRow.querySelector('select'), 'ni por código');
+    lockedApp.destroy();
+
+    // ------------------------------------------------------------ cambio 2: regla de raíz al guardar
+    w.detailLine = line(4, { brand_id: 4, brand_code: 'AAAA', brand_short: 'Alfa', brand_name: 'AAAA · Alfa', consecutive: 7, reference: 'CE-XXX-EKG-AAAA-07', display_code: 'CE-XXX-EKG-AAAA-07',
+        folio: '07', folio_number: 7, classified: true, line_class_code: `${base}-AAAA`, session_root: base, product_root: 'CE-XXX-EKG', root_mismatch: true });
+    const rootApp = new w.owl.App(w.Editor, { templates, dev: true, props: { close() {}, lineId: 4, sessionId: 7, classCode: 'CE-XXX-EKG-AAAA-07', readonly: false, onSaved() {}, onBrandChanged: (s) => { w.rootSession = s; } } });
+    const rootEditor = await rootApp.mount(w.document.body); await tick();
+    assert.ok(doc.querySelector('.o_bac_root_warn'), 'aviso de raíz cambiada');
+    assert.match(doc.querySelector('.o_bac_root_warn').textContent, /La raíz de clasificación cambió; se debe reservar un folio nuevo/);
+    assert.match(doc.querySelector('.o_bac_root_warn').textContent, /CE-XXX-EKG/);
+    assert.equal(doc.querySelector('.o_bac_brand_confirm').disabled, false, 'el botón de reservar folio se habilita sin cambiar la marca');
+    assert.match(doc.querySelector('.o_bac_brand_confirm').textContent, /Cambiar marca y reservar folio/);
+    const callsBefore = calls.length;
+    rootEditor.save(); await tick();
+    assert.ok(!calls.slice(callsBefore).some((c) => c.method === 'workspace_update_line'), 'no se guarda con la referencia inconsistente');
+    assert.equal(w.dialogs.at(-1).component.name, 'ConfirmationDialog');
+    assert.match(w.dialogs.at(-1).props.title, /raíz de clasificación cambió/);
+    assert.match(w.dialogs.at(-1).props.body, /CE-TCL-EKG-AAAA/, 'la llave destino conserva la marca');
+    await w.dialogs.at(-1).props.confirm(); await tick(60);
+    const after = calls.slice(callsBefore).map((c) => c.method);
+    assert.deepEqual(after.filter((m) => ['clasificador_reserve_folio', 'workspace_update_line'].includes(m)), ['clasificador_reserve_folio', 'workspace_update_line'], 'reserva folio nuevo y después guarda');
+    assert.ok(w.rootSession, 'la reserva refresca el paso 3');
+    assert.ok(!doc.querySelector('.o_bac_root_warn'), 'con la raíz vigente desaparece el aviso');
+    assert.match(doc.querySelector('.o_bcw_modal_ref').textContent, /CE-TCL-EKG-AAAA-01/);
+    // el botón Cambiar marca y reservar folio se desactiva de nuevo hasta elegir otra marca
+    assert.equal(doc.querySelector('.o_bac_brand_confirm').disabled, true);
+    rootApp.destroy();
     dom.window.close();
-    console.log('Asistente Clasificador: plantillas OWL compiladas, paso 1/2/3 y modal de marca OK');
+    console.log('Clasificador Global: plantillas OWL compiladas; paso 3 editable, tabla de unidades y empaques y regla de raíz OK');
 })().catch((error) => { console.error(error); process.exit(1); });

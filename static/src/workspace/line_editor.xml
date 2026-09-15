@@ -18,6 +18,15 @@
                     <span t-if="line.classified" class="o_bcw_mono o_bac_brand_folio">folio <t t-esc="line.folio"/></span>
                 </div>
 
+                <div t-if="rootMismatch" class="o_bac_root_warn" role="alert">
+                    <i class="fa fa-exclamation-triangle" aria-hidden="true"/>
+                    <div class="o_bac_root_warn_text">
+                        <strong>La raíz de clasificación cambió; se debe reservar un folio nuevo.</strong>
+                        <span>El folio <span class="o_bcw_mono" t-esc="line.folio"/> se reservó para <span class="o_bcw_mono" t-esc="line.product_root"/>
+                            y esta sesión clasifica en <span class="o_bcw_mono" t-esc="line.session_root"/>. No se puede guardar con una referencia
+                            inconsistente: usa «Cambiar marca y reservar folio» (misma marca, folio nuevo en <span class="o_bcw_mono" t-esc="rootTargetPrefix"/>).</span>
+                    </div>
+                </div>
                 <div class="o_bac_brand_row">
                     <div class="o_bac_brand_input">
                         <span t-if="brandPendingId and brandPendingId !== brandConfirmedId" class="o_bcw_chip o_bac_chip_pending">
@@ -43,7 +52,8 @@
                         </div>
                     </div>
                     <button t-if="!props.readonly" type="button" class="btn btn-primary btn-sm o_bac_brand_confirm"
-                            t-att-disabled="!brandPendingId or brandPendingId === brandConfirmedId or state.brand.confirming"
+                            t-att-class="{ 'btn-warning': rootMismatch and !(brandPendingId and brandPendingId !== brandConfirmedId) }"
+                            t-att-disabled="!canReserveFolio"
                             t-on-click="confirmBrand">
                         <i t-att-class="state.brand.confirming ? 'fa fa-circle-o-notch fa-spin' : 'fa fa-key'" aria-hidden="true"/>
                         <t t-esc="brandConfirmedId ? ' Cambiar marca y reservar folio' : ' Confirmar marca y reservar folio'"/>
@@ -54,6 +64,87 @@
                 <small t-if="!brandConfirmedId and brandCatalogLabel" class="o_bcw_help">Marca actual en la ficha: <strong t-esc="brandCatalogLabel"/> (sugerida; confírmala o elige otra).</small>
                 <small t-if="line.reclassify_from" class="o_bcw_warn"><i class="fa fa-exclamation-circle me-1" aria-hidden="true"/>Clave actual <span class="o_bcw_mono" t-esc="line.reclassify_from"/>: al generar claves recibirá la nueva y su numeración cambiará.</small>
             </div>
+        </xpath>
+
+        <!-- La unidad indivisible deja de ser un campo suelto: es la primera fila fija de "Unidades y empaques". -->
+        <xpath expr="//select[@id='bcw_editor_uom']/../.." position="replace"/>
+
+        <!-- Unidad base + empacados en una sola tabla. La fila base es sintética (uom_id de la línea): no es un
+             product.uom, no se elimina ni se reordena y su única captura es el código de barras del producto. -->
+        <xpath expr="//section[@aria-label='Empacados de productos y códigos de barras']" position="replace">
+            <section class="o_bcw_editor_block o_bac_units" aria-label="Unidades y empaques">
+                <div class="o_bcw_editor_heading">
+                    <h5>Unidades y empaques</h5>
+                    <p>La primera fila es la unidad indivisible del producto (unidad base). Debajo, un renglón por cada tipo de empaque: cuántas unidades base contiene y su código de barras.</p>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm o_bcw_rows o_bac_units_table">
+                        <thead><tr>
+                            <th class="o_bcw_col_type">Tipo de empaque</th>
+                            <th>Cantidad (en <t t-esc="baseUnitLabel"/>)</th>
+                            <th>Código de barras</th>
+                            <th class="o_bac_units_act"/>
+                        </tr></thead>
+                        <tbody>
+                            <tr class="o_bac_unit_base" t-att-class="{ 'o_bac_unit_base--error': state.errors.uom_id }">
+                                <td>
+                                    <div class="o_bac_unit_base_cell">
+                                        <i class="fa fa-key o_bac_unit_key" aria-hidden="true" title="Unidad base del producto"/>
+                                        <t t-if="!state.uomEditing">
+                                            <span class="o_bac_unit_base_name"><t t-esc="baseUnitLabel"/> · Unidad base</span>
+                                            <button t-if="canChangeBaseUom" type="button" class="btn btn-link btn-sm p-0 o_bac_unit_change" t-on-click="startUomEdit">Cambiar unidad</button>
+                                        </t>
+                                        <t t-else="">
+                                            <select id="bcw_editor_uom" class="o_input o_bcw_input o_bac_unit_select" required="required" aria-label="Unidad indivisible"
+                                                    t-att-aria-invalid="!!state.errors.uom_id" t-att-class="{ 'o_bcw_input--error': state.errors.uom_id }"
+                                                    t-att-disabled="!canChangeBaseUom" t-on-change="onBaseUomChange" autofocus="autofocus">
+                                                <option value="" t-att-selected="!state.draft.uom_id">—</option>
+                                                <option t-foreach="state.catalogs.uoms" t-as="uom" t-key="uom.id" t-att-value="uom.id"
+                                                        t-att-selected="uom.id === state.draft.uom_id" t-esc="uom.name"/>
+                                            </select>
+                                            <button type="button" class="btn btn-link btn-sm p-0 o_bac_unit_change" t-on-click="cancelUomEdit">Listo</button>
+                                        </t>
+                                    </div>
+                                    <small t-if="state.line.uom_locked" class="o_bcw_help d-block"><i class="fa fa-lock me-1" aria-hidden="true"/>El producto ya tiene movimientos de inventario en <strong t-esc="state.line.product_uom_name"/>: esa unidad se conserva. Registra cajas, bolsas u otros empaques como empacados con su equivalencia.</small>
+                                    <small t-elif="!state.uomEditing" class="o_bcw_help d-block">Una misma unidad para comprar, vender y contar. Las cajas se registran como empacados.</small>
+                                    <small t-if="state.errors.uom_id" class="o_bcw_error d-block" t-esc="state.errors.uom_id"/>
+                                </td>
+                                <td>
+                                    <div class="o_bcw_qty_unit">
+                                        <input aria-label="Cantidad de la unidad base" class="o_bcw_input" type="number" value="1" disabled="disabled" title="La unidad base siempre es 1"/>
+                                        <span class="o_bcw_qty_unit_label" t-esc="baseUnitLabel"/>
+                                    </div>
+                                </td>
+                                <td><input aria-label="Código de barras de la unidad base" class="o_bcw_input o_bcw_mono o_bac_unit_barcode" placeholder="Código de barras de la pieza"
+                                           t-att-value="state.draft.barcode" t-att-readonly="props.readonly" t-on-input="(ev) => this.onInput('barcode', ev)"/></td>
+                                <td class="o_bac_units_act">
+                                    <span class="o_bac_unit_lock" role="img" aria-label="Unidad base: no se elimina ni se reordena" title="Unidad base: no se elimina ni se reordena"><i class="fa fa-lock" aria-hidden="true"/></span>
+                                </td>
+                            </tr>
+                            <tr t-foreach="state.draft.presentation_data" t-as="row" t-key="row_index" class="o_bac_unit_pack">
+                                <td>
+                                    <select aria-label="Tipo de empaque" class="o_bcw_input" t-att-disabled="props.readonly" t-on-change="(ev) => this.onRow('presentation_data', row_index, 'package_type_id', ev)">
+                                        <option value="" t-att-selected="!row.package_type_id" t-esc="rowTypeLabel(row) || '— Elige el tipo —'"/>
+                                        <option t-foreach="state.catalogs.package_types" t-as="pt" t-key="pt.id" t-att-value="pt.id"
+                                                t-att-selected="pt.id === row.package_type_id" t-esc="pt.name"/>
+                                    </select>
+                                </td>
+                                <td>
+                                    <div class="o_bcw_qty_unit">
+                                        <input aria-label="Cantidad por empacado" class="o_bcw_input" type="number" min="1" step="1" t-att-value="row.quantity" t-att-readonly="props.readonly" t-on-input="(ev) => this.onRow('presentation_data', row_index, 'quantity', ev)"/>
+                                        <span class="o_bcw_qty_unit_label" t-att-title="'Unidad base: ' + baseUnitLabel" t-esc="baseUnitLabel"/>
+                                    </div>
+                                </td>
+                                <td><input aria-label="Código del empacado" class="o_bcw_input o_bcw_mono" t-att-value="row.barcode" t-att-readonly="props.readonly" t-on-input="(ev) => this.onRow('presentation_data', row_index, 'barcode', ev)"/></td>
+                                <td class="o_bac_units_act"><button t-if="!props.readonly" type="button" class="btn btn-link" aria-label="Quitar empacado" t-on-click="() => this.removeRow('presentation_data', row_index)"><i class="fa fa-trash"/></button></td>
+                            </tr>
+                            <tr t-if="!state.draft.presentation_data.length" class="o_bac_unit_empty"><td colspan="4" class="o_bcw_help">Sin empacados: la unidad base se vende y se cuenta por sí sola.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <button t-if="!props.readonly" type="button" class="btn btn-outline-secondary btn-sm align-self-start o_bac_add_pack" t-on-click="() => this.addRow('presentation_data')"><i class="fa fa-plus me-1"/>Agregar empacado</button>
+                <p t-if="state.errors.presentation_data" class="o_bcw_error" t-esc="state.errors.presentation_data"/>
+            </section>
         </xpath>
     </t>
 

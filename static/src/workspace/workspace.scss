@@ -26,8 +26,11 @@
     .o_bac_table tbody tr.o_bac_row_in_session:hover td { background: #f1f5f9; }
     .o_bac_table tbody tr.o_bcw_row_reclassified td { background: #fef3f2; }
 
-    // paso 3: solo lectura
+    // paso 3: clasificados; la columna Acciones abre el modal de edición
     .o_bac_table_done td { vertical-align: top; }
+    .o_bac_w_act3 { width: 72px; text-align: center; white-space: nowrap; }
+    .o_bac_edit3 { color: var(--bcw-brand); border-color: var(--bcw-brand-soft); }
+    .o_bac_edit3:hover:not(:disabled) { background: var(--bcw-brand-soft); color: #1d4ed8; }
     .o_bac_brand_code { color: var(--bcw-brand); font-weight: 700; }
     .o_bac_pending {
         margin-top: 12px; padding: 10px 12px; border-radius: var(--bcw-radius);
@@ -51,4 +54,30 @@
     .o_bac_brand_lookup { max-height: 260px; overflow-y: auto; }
     .o_bac_brand_code { color: var(--bcw-brand, #2563eb); font-weight: 700; }
     .o_bac_brand_create { color: #1d4ed8; font-weight: 600; }
+}
+
+// modal de edición: aviso de raíz cambiada (el folio ya no corresponde a grupo/familia/clasificador de la sesión)
+.o_bcw_modal .o_bac_root_warn {
+    display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; margin-bottom: 8px; border-radius: 8px;
+    background: #fff7ed; border: 1px solid #fdba74; color: #9a3412; font-size: 12.5px;
+    > i { font-size: 16px; margin-top: 2px; flex: 0 0 auto; }
+    strong { display: block; font-weight: 700; }
+    .o_bac_root_warn_text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .o_bcw_mono { font-weight: 600; }
+}
+
+// modal de edición: tabla unificada "Unidades y empaques"
+.o_bcw_modal .o_bac_units_table {
+    .o_bac_units_act { width: 56px; text-align: center; white-space: nowrap; }
+    // fila base: fondo de acento distinto al de los empacados; no se elimina ni se reordena
+    tr.o_bac_unit_base td { background: var(--bcw-family-soft, #ede9fe); border-bottom: 1px solid #ddd6fe; vertical-align: top; }
+    tr.o_bac_unit_base--error td { background: #fef3f2; }
+    .o_bac_unit_base_cell { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 34px; }
+    .o_bac_unit_key { color: var(--bcw-family, #7c3aed); font-size: 14px; }
+    .o_bac_unit_base_name { font-weight: 600; color: var(--bcw-ink, #1d2939); white-space: nowrap; }
+    .o_bac_unit_change { font-size: 12px; color: var(--bcw-family, #7c3aed); }
+    .o_bac_unit_select { flex: 1 1 180px; min-width: 160px; width: auto; }
+    .o_bac_unit_lock { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; color: var(--bcw-ink-2, #667085); }
+    tr.o_bac_unit_base .o_bcw_qty_unit .o_bcw_input:disabled { background: #f5f3ff; color: var(--bcw-ink, #1d2939); font-weight: 600; }
+    tr.o_bac_unit_base .o_bcw_help, tr.o_bac_unit_base .o_bcw_error { margin-top: 4px; }
 }

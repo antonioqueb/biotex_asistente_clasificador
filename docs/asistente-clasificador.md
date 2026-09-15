@@ -1,6 +1,6 @@
 # Clasificador Global — especificación implementada
 
-Módulo `biotex_asistente_clasificador` 19.0.1.1.0 · 12 de septiembre de 2026 · requiere `biotex_catalog` 19.0.3.5.3.
+Módulo `biotex_asistente_clasificador` 19.0.1.2.0 · 12 de septiembre de 2026 (ampliado el 14 de septiembre de 2026) · requiere `biotex_catalog` 19.0.3.5.3.
 
 ## Arquitectura: extensión, no copia
 
@@ -57,11 +57,49 @@ el paso 3 se refresque al instante. El campo **nunca se bloquea**:
 Al confirmar la marca se aplica la sugerencia de fabricante de la marca si el usuario no lo capturó (igual que la sesión clásica).
 
 ### Paso 3
-Solo lectura. Columnas: Marca, Folio, Nombre (nuevo, con el anterior debajo si cambió), Referencia completa, Unidad de medida,
-Imagen (consulta). Orden: marca (nombre, luego código) y folio ascendente; lo calcula el cliente con los datos devueltos por
+Columnas: Marca, Folio, Nombre (nuevo, con el anterior debajo si cambió), Referencia completa, Unidad de medida,
+Imagen (consulta) y **Acciones** (lápiz). Orden: marca (nombre, luego código) y folio ascendente; lo calcula el cliente con los datos devueltos por
 `_workspace_session`, así que cada `onSaved` / `onBrandChanged` inserta, reubica y refleja cambios sin recargar. Debajo, una
 lista informativa de pendientes (sin marca ni folio). "Generar claves" queda deshabilitado con pendientes y el servidor lo
 rechaza también (`action_confirm`).
+
+**Editar desde el paso 3 (cambio 1, 14 sep 2026).** El lápiz de cada fila llama a `editLine(line)`, el mismo método y el mismo
+componente `BiotexClasificadorLineEditorDialog` que usa el paso 2 (no hay un segundo modal), precargado con esa línea. Así una
+sesión retomada sin terminar, que abre directo en el paso 3 con todo clasificado, sigue siendo editable. Con la sesión aplicada el
+lápiz queda deshabilitado.
+
+### Regla de raíz al guardar (cambio 2, 14 sep 2026)
+Cada reserva de folio registra en la línea la raíz con la que se hizo: `folio_root` = ids de grupo, familia y clasificador de la
+sesión, su llave base (`code`, GG-FFF-CCC) y la llave exacta (`key`, GG-FFF-CCC-MMMM). Las líneas con clave conservada (caso A)
+no la necesitan: su raíz es la del producto (`biotex_group_id`, `categ_id`, `biotex_classifier_id`).
+
+Al guardar desde el modal (`workspace_update_line`) un producto con marca y folio:
+
+| Comparación (por ids) | Comportamiento |
+|---|---|
+| raíz de la sesión == raíz del folio | Se conservan marca y folio (no se reserva nada). Tras guardar, `_clasificador_refresh_reference` recalcula llave, referencia y folio visibles (por si cambiaron las etiquetas de familia o clasificador) sin tocar el consecutivo, y actualiza el `code`/`key` guardados en `folio_root`. |
+| raíz de la sesión != raíz del folio | El servidor rechaza el guardado («La raíz de clasificación cambió…»). El modal lo muestra desde que se abre (`root_mismatch`, `session_root`, `product_root` en los datos de la línea), habilita **Cambiar marca y reservar folio** aunque la marca no cambie y, si se pulsa Guardar, abre el aviso «La raíz de clasificación cambió; se debe reservar un folio nuevo» → `clasificador_reserve_folio` (misma marca, siguiente folio de la raíz vigente; el anterior no se reutiliza) y después guarda. |
+
+`_ensure_reservations` (al preparar la confirmación) también trata la raíz distinta como colisión y reserva de nuevo, como red
+de seguridad. La migración `19.0.1.2.0` registra `folio_root` en los borradores existentes con folio (consistentes con la raíz
+vigente porque el `write` de la sesión renumera al cambiar grupo, familia o clasificador).
+
+### Unidades y empaques en el modal (cambio 3, 14 sep 2026)
+Las secciones «Unidad indivisible» y «Empacados de productos y códigos de barras» se fusionan en una tabla **Unidades y empaques**
+(Tipo de empaque / Cantidad (en la unidad base) / Código de barras):
+
+- **Primera fila, fija: la unidad base.** Registro sintético derivado del `uom_id` de la línea (no es un `product.uom`), con ícono
+  de llave, fondo de acento propio, texto «PIEZA · Unidad base» (el nombre de la unidad del catálogo), cantidad 1 deshabilitada,
+  código de barras editable (`line.barcode`, que al confirmar se escribe en `product.barcode`) y candado en lugar de eliminar: no
+  se elimina ni se reordena (regla resuelta en el widget OWL, no con reglas de acceso). Un enlace discreto «Cambiar unidad» muestra
+  el selector de unidad (el mismo de antes) para no perder la captura de la unidad indivisible; con movimientos de inventario no
+  aparece y se muestra el mensaje «esa unidad se conserva» (`uom_locked`, mismo bloqueo de siempre en cliente y servidor).
+- **Debajo, los empacados** (`presentation_data`): tipo de empaque por combo, cantidad en unidades base, código de barras y su
+  eliminar; **Agregar empacado** al pie de la misma tabla. Al confirmar la sesión se escriben como registros reales de
+  `product.uom` con código de barras (`_biotex_set_presentations`; en Odoo 19 `product.uom` sustituye a `product.packaging`).
+
+Íconos: el backend de Odoo 19 no carga Tabler Icons, así que `ti-edit`, `ti-key` y `ti-lock` se representan con Font Awesome
+(`fa-pencil`, `fa-key`, `fa-lock`), la misma fuente que usa el resto del asistente.
 
 ### Folio y concurrencia (sección 5)
 Contador por llave exacta `GG-FFF-CCC-MMMM` en `biotex_product_sequence`. La reserva es `INSERT ... ON CONFLICT (prefix) DO
@@ -74,16 +112,16 @@ folios 1 y 2 y al menos un reintento).
 ## Modelo de datos
 - `biotex.classification.session.brand_per_line` (Boolean, índice), `pending_count` (calculado).
 - Línea: `brand_id` (ya existía como atributo; en sesiones de marca por producto es la marca de clasificación y solo se escribe
-  vía `clasificador_set_line_brand`), `line_class_code` (Char, almacenado, índice), `folio` (Char `NN`, almacenado) y
-  `folio_number` (Integer, almacenado, para ordenar). `consecutive` sigue siendo el número reservado; `reference` se calcula con
-  la llave de la línea y muestra `False` mientras falte marca.
+  vía `clasificador_set_line_brand`), `line_class_code` (Char, almacenado, índice), `folio` (Char `NN`, almacenado),
+  `folio_number` (Integer, almacenado, para ordenar) y `folio_root` (Json: raíz con la que se reservó el folio). `consecutive`
+  sigue siendo el número reservado; `reference` se calcula con la llave de la línea y muestra `False` mientras falte marca.
 - Vistas de sesión: columna "Marca por producto", filtros, y en la ficha marca y folio por línea.
 
 ## Decisiones sobre los puntos abiertos (a validar con negocio)
 | Punto | Decisión implementada |
 |---|---|
 | 3.3.1 Pendientes en el paso 3 | Se listan aparte, informativos (código pendiente y nombre), sin acciones. |
-| 3.3.2 Acción de consulta en el paso 3 | Solo "Ver imágenes"; ninguna edición. |
+| 3.3.2 Acción de consulta en el paso 3 | "Ver imágenes" y, desde el 14 sep 2026, **Editar** (lápiz) con el mismo modal del paso 2. |
 | 3.3.3 Arrastre para reordenar | Eliminado; el orden lo define marca + folio. |
 | 3.2 Layout de la fila | Dos renglones por fila (nombre / badges); acciones en una sola línea. |
 | 7.1 Quitar un producto con folio | No hay acción de eliminar en el asistente; desde la ficha de la sesión el folio se pierde (no se libera), igual que en el asistente base. |
@@ -108,10 +146,16 @@ Con usuario **Clasificador de catálogo** en QA:
 | I | Generar claves con un producto sin marca. | Botón deshabilitado; el servidor rechaza si se fuerza. |
 | J | Dos usuarios confirman la misma marca a la vez (o `check_folio_concurrency` en QA). | Folios distintos y consecutivos. |
 | K | Abrir "Clasificador por Grupos" (base). | No lista ni abre las sesiones de marca por producto; su flujo no cambia. |
+| L | Retomar una sesión sin terminar con todo clasificado; pulsar el lápiz en el paso 3. | Se abre «Editando producto» con ese producto; al guardar, el paso 3 se refresca. |
+| M | Producto con marca y folio; guardar sin cambiar la raíz. | Marca y folio iguales; referencia refrescada. |
+| N | Producto con folio de otra raíz (`folio_root` distinto) al abrir el modal. | Aviso naranja; Guardar abre «La raíz de clasificación cambió»; al aceptar, folio nuevo de la misma marca y luego guarda. Sin aceptar, el servidor rechaza el guardado. |
+| O | Modal: tabla «Unidades y empaques». | Primera fila fija (llave, «PIEZA · Unidad base», cantidad 1 deshabilitada, solo código de barras editable, candado); empacados debajo con eliminar; «Agregar empacado» añade filas debajo. Con movimientos de inventario no hay «Cambiar unidad» y se muestra «esa unidad se conserva». |
 
 ## Verificación automatizada
-- `tests/test_clasificador.py`: 13 casos (llave base, folio por llave, contador compartido, caso A, caso B, otra clasificación,
+- `tests/test_clasificador.py`: 18 casos (llave base, folio por llave, contador compartido, caso A, caso B, otra clasificación,
   editar desde el paso 2, catálogo de marcas fresco y alta rápida, bloqueo con pendientes y aplicación por línea, orden del paso
-  3, renumeración al cambiar la llave base, convivencia y comportamiento intacto del asistente base). Se ejecutan en el servidor.
-- `tests/workspace_templates.cjs` (node + jsdom + OWL 2.8.4): comprobado el 12 de septiembre de 2026 en esta máquina.
+  3, renumeración al cambiar la llave base y raíz registrada, regla de raíz al guardar ×4, convivencia y comportamiento intacto
+  del asistente base). Se ejecutan en el servidor.
+- `tests/workspace_templates.cjs` (node + jsdom + OWL 2.8.4): paso 3 editable, tabla de unidades y empaques (incluida la fila
+  bloqueada por movimientos) y regla de raíz en el modal; comprobado el 14 de septiembre de 2026 en esta máquina.
 - Pendiente en instancia: instalar el módulo en QA y correr los tests Odoo y `check_folio_concurrency`.

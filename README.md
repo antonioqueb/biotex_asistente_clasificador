@@ -8,8 +8,9 @@ modal de edición, misma galería de imágenes y mismo contador de folios; cambi
 | Paso 1 | Grupo + Familia + Clasificador + Marca | Grupo + Familia + Clasificador (llave base `GG-FFF-CCC`) |
 | Folio | Se reserva al agregar el producto | Se reserva al **confirmar la marca** de cada producto (llave exacta `GG-FFF-CCC-MMMM`) |
 | Paso 2 | Producto / Referencia / Marca / +Agregar | Badges de catálogo (`biotex_class_state`) y de sesión, código pendiente `GG-FFF-CCC-????-??`, acciones **Ver imágenes**, **Editar** y +Agregar; sin eliminar |
-| Marca | En la sesión | En el modal de edición, con alta rápida y catálogo releído en cada apertura |
-| Paso 3 | Tabla editable con arrastre | Solo lectura, ordenado por marca y folio, refrescado en vivo tras cada edición |
+| Marca | En la sesión | En el modal de edición, con alta rápida y catálogo releído en cada apertura; al guardar, si la raíz (grupo, familia, clasificador) del folio ya no es la de la sesión, exige reservar folio nuevo |
+| Paso 3 | Tabla editable con arrastre | Ordenado por marca y folio, refrescado en vivo; columna Acciones con el lápiz que abre el mismo modal del paso 2 |
+| Modal: unidades | Unidad indivisible y empacados en dos secciones | Una tabla «Unidades y empaques»: fila base fija (llave, cantidad 1, solo código de barras, candado) y empacados debajo |
 
 Ambos asistentes conviven: una sesión con `brand_per_line` pertenece a este; el resto sigue igual. Menú:
 **Catálogo → Clasificador Global** (también en Inventario → Control de inventario).

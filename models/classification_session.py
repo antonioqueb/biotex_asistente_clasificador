@@ -17,6 +17,10 @@ Reglas de esta variante:
 * Un folio reservado no se devuelve al cambiar de marca ni al quitar la línea (misma política que el
   resto del catálogo: la numeración es identidad, puede haber saltos).
 * No se confirma la sesión mientras exista una línea sin marca o sin folio.
+* Cada folio recuerda la raíz (grupo, familia y clasificador) con la que se reservó (``folio_root``).
+  Al guardar desde el modal, si la raíz de la sesión sigue siendo la misma se conservan marca y folio y
+  solo se refresca la referencia (por si cambiaron las etiquetas); si la raíz cambió, el folio ya no
+  corresponde y hay que reservar uno nuevo (``clasificador_reserve_folio``) antes de poder guardar.
 """
 from odoo import api, fields, models
 from odoo.exceptions import UserError
@@ -111,7 +115,7 @@ class ClassificationSession(models.Model):
             line._refresh_identity()
             if line.preserve_reference or not line.brand_id:
                 continue
-            collision = not line.consecutive or Line.search_count([
+            collision = not line.consecutive or line._clasificador_root_state()['root_mismatch'] or Line.search_count([
                 ('line_class_code', '=', line.line_class_code), ('consecutive', '=', line.consecutive), ('id', '!=', line.id),
             ], limit=1) or Product.search_count([
                 ('default_code', '=', line.reference), ('product_tmpl_id', '!=', line.product_id.id),
@@ -302,6 +306,51 @@ class ClassificationSession(models.Model):
             line._clasificador_assign_brand(brand)
         return {'session': self._workspace_session(), 'line': line._workspace_detail()}
 
+    def clasificador_reserve_folio(self, line_id):
+        """Reserva un folio nuevo para la marca ya confirmada de la línea, contra la raíz vigente de la sesión.
+
+        Es el flujo "Cambiar marca y reservar folio" cuando la marca no cambia pero la raíz sí (grupo,
+        familia o clasificador de la sesión distintos de los que respaldaban el folio). El folio anterior
+        no se reutiliza (misma política que al cambiar de marca).
+        """
+        self.ensure_one()
+        self._lock_workspace()
+        self._check_editable()
+        if not self.brand_per_line:
+            raise UserError('Esta sesión no asigna la marca por producto.')
+        if not self.complete:
+            raise UserError('Complete grupo, familia y clasificador antes de reservar el folio.')
+        line = self.line_ids.filtered(lambda l: l.id == line_id)
+        if not line:
+            raise UserError('La línea ya no pertenece a esta sesión.')
+        if not line.brand_id:
+            raise UserError('Confirme primero la marca del producto: es la que reserva el folio.')
+        line._clasificador_assign_brand(line.brand_id)
+        return {'session': self._workspace_session(), 'line': line._workspace_detail()}
+
+    def workspace_update_line(self, line_id, vals):
+        """Guardar desde el modal con la regla de raíz (marca y folio ya asignados):
+
+        * misma raíz que la del folio: se conservan marca y folio y se refresca la referencia completa;
+        * raíz distinta: no se guarda con una referencia inconsistente; primero se reserva folio nuevo.
+        """
+        if not self.brand_per_line:
+            return super().workspace_update_line(line_id, vals)
+        self.ensure_one()
+        line = self.line_ids.filtered(lambda l: l.id == line_id)
+        classified = bool(line) and line._is_classified()
+        if classified:
+            state = line._clasificador_root_state()
+            if state['root_mismatch']:
+                raise UserError('La raíz de clasificación cambió (%s → %s): el folio %s de "%s" ya no corresponde. '
+                                'Use "Cambiar marca y reservar folio" para reservar un folio nuevo antes de guardar.'
+                                % (state['product_root'], state['session_root'], line.folio, line.display_name))
+        result = super().workspace_update_line(line_id, vals)
+        if classified:
+            line._clasificador_refresh_reference()
+            result = self._workspace_session()
+        return result
+
     @api.model
     def clasificador_brands(self, query='', session_id=None, limit=200):
         """Marcas leídas de nuevo en cada apertura del selector, con las ya usadas en la familia y clasificador primero."""
@@ -344,6 +393,10 @@ class ClassificationSessionLine(models.Model):
         help='GG-FFF-CCC-MMMM con la marca de la línea (marca por producto) o de la sesión.')
     folio = fields.Char(string='Folio', compute='_compute_folio', store=True)
     folio_number = fields.Integer(string='Folio (número)', compute='_compute_folio', store=True)
+    folio_root = fields.Json(
+        string='Raíz del folio', readonly=True, copy=False,
+        help='Grupo, familia y clasificador (ids y llave) con los que se reservó el folio. Si la sesión cambia '
+             'de raíz, el folio deja de corresponder y se reserva uno nuevo al editar.')
 
     @api.depends('session_id.class_code', 'session_id.brand_per_line', 'brand_id.code')
     def _compute_line_class_code(self):
@@ -408,14 +461,61 @@ class ClassificationSessionLine(models.Model):
             return super()._reserve_consecutive()
         self.session_id._check_editable()
         if not self.brand_id or not self.line_class_code:
-            return super(BaseLine, self).write({'consecutive': 0})
+            return super(BaseLine, self).write({'consecutive': 0, 'folio_root': False})
         number = self.env['biotex.product.sequence']._next(self.line_class_code, reserve=True)
-        return super(BaseLine, self).write({'consecutive': number})
+        return super(BaseLine, self).write({'consecutive': number, 'folio_root': self._clasificador_session_root()})
+
+    # ------------------------------------------------------------------ raíz del folio (grupo + familia + clasificador)
+    def _clasificador_session_root(self):
+        """Raíz vigente de la sesión: ids de grupo, familia y clasificador, su llave base y la llave exacta de la línea."""
+        self.ensure_one()
+        session = self.session_id
+        return {'group_id': session.group_id.id, 'family_id': session.family_id.id, 'classifier_id': session.classifier_id.id,
+                'code': session.class_code or '', 'key': self.line_class_code or ''}
+
+    def _clasificador_product_root(self):
+        """Raíz que respalda el folio o la clave actual de la línea (``None`` si no hay folio o no se registró)."""
+        self.ensure_one()
+        if self.preserve_reference:
+            product = self.product_id
+            group, family, classifier = product.biotex_group_id, product.categ_id, product.biotex_classifier_id
+            parts = self.env['biotex.product.sequence']._split_code(product.default_code)
+            return {'group_id': group.id, 'family_id': family.id, 'classifier_id': classifier.id,
+                    'code': '-'.join(part for part in (group.code, family.biotex_code, classifier.code) if part),
+                    'key': parts[0] if parts else ''}
+        return self.folio_root or None
+
+    def _clasificador_root_state(self):
+        """Compara la raíz de la sesión con la del folio de la línea (regla de actualización al editar)."""
+        self.ensure_one()
+        session_root = self._clasificador_session_root()
+        state = {'session_root': session_root['code'], 'product_root': '', 'root_mismatch': False}
+        if not self._is_classified():
+            return state
+        product_root = self._clasificador_product_root()
+        if not product_root:
+            return state  # folio reservado antes de registrar la raíz: se asume la vigente
+        state['product_root'] = product_root.get('code') or ''
+        keys = ('group_id', 'family_id', 'classifier_id')
+        state['root_mismatch'] = any((product_root.get(k) or False) != (session_root[k] or False) for k in keys)
+        return state
+
+    def _clasificador_refresh_reference(self):
+        """Misma raíz: recalcula llave, referencia y folio visibles sin tocar el consecutivo (etiquetas cambiadas)."""
+        for name in ('line_class_code', 'reference', 'folio', 'folio_number'):
+            self.env.add_to_compute(self._fields[name], self)
+        self.mapped('reference')
+        self.mapped('folio')
+        for line in self:
+            if line.consecutive and line.folio_root and not line.preserve_reference:
+                root = line._clasificador_session_root()
+                if root != line.folio_root:
+                    super(BaseLine, line).write({'folio_root': root})
 
     def _clasificador_assign_brand(self, brand):
         self.ensure_one()
         # la marca se escribe por debajo del write público (que la protege) y el folio anterior se descarta
-        super(BaseLine, self).write({'brand_id': brand.id, 'consecutive': 0})
+        super(BaseLine, self).write({'brand_id': brand.id, 'consecutive': 0, 'folio_root': False})
         self._refresh_identity()  # caso A: conserva clave y nombre, sin folio nuevo
         if not self.preserve_reference:
             self._reserve_consecutive()
@@ -459,6 +559,8 @@ class ClassificationSessionLine(models.Model):
             'suggested_brand_id': product.biotex_brand_id.id or False,
             'suggested_brand_name': product.biotex_brand_id.display_name or '',
             'product_reference': product.default_code or '',
+            # regla de raíz: el folio se reservó con esta raíz; si la sesión cambió, hay que reservar folio nuevo
+            **self._clasificador_root_state(),
         }
 
     def _workspace_line(self, moved=None):
