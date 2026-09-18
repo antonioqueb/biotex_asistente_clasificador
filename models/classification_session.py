@@ -117,7 +117,7 @@ class ClassificationSession(models.Model):
                 continue
             collision = not line.consecutive or line._clasificador_root_state()['root_mismatch'] or Line.search_count([
                 ('line_class_code', '=', line.line_class_code), ('consecutive', '=', line.consecutive), ('id', '!=', line.id),
-            ], limit=1) or Product.search_count([
+            ] + self.env['biotex.product.sequence']._reservation_after_reset_domain(line.line_class_code), limit=1) or Product.search_count([
                 ('default_code', '=', line.reference), ('product_tmpl_id', '!=', line.product_id.id),
             ], limit=1)
             if collision:

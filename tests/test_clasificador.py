@@ -1,4 +1,6 @@
 """Clasificador Global: marca y folio por producto, casos A/B, paso 3 y convivencia con el asistente base."""
+import json
+
 from odoo.exceptions import UserError
 from odoo.tests import TransactionCase, tagged
 from odoo.tests.common import new_test_user
@@ -49,6 +51,38 @@ class TestClasificador(TransactionCase):
     def confirm(self, session):
         preview = session.workspace_confirmation_preview()
         session.workspace_confirm(expected_revision=preview['revision'])
+
+    def test_authorized_reset_ignores_closed_per_line_reservations_and_preserves_history(self):
+        Sequence = self.env['biotex.product.sequence']
+        valid = self.classified_product(self.prefix_a + '-01', biotex_consecutive=1)
+        retired = self.classified_product(self.prefix_a + '-02', biotex_consecutive=2)
+        retired.write({'default_code': 'RETIRED-GLOBAL-TWO', 'biotex_consecutive': 0})
+        old = self.session()
+        old_product = self.product(biotex_reference='RESET-GLOBAL-OLD-MANUFACTURER')
+        old.workspace_add_products(old_product.ids)
+        old.clasificador_set_line_brand(old.line_ids.id, self.brand_a.id)
+        self.assertEqual(old.line_ids.consecutive, 3)
+        self.confirm(old)
+        old_product.write({'default_code': 'RETIRED-GLOBAL-THREE', 'biotex_consecutive': 0})
+        History = self.env['biotex.product.code.history']
+        history = History.search([('prefix', '=', self.prefix_a)]).read(['code', 'consecutive'])
+        self.env['ir.config_parameter'].sudo().set_param(
+            'biotex_catalog.sequence_reset_boundary.' + self.prefix_a,
+            json.dumps({'history_id': max(History.search([]).ids, default=0),
+                        'line_id': max(self.env['biotex.classification.session.line'].search([]).ids, default=0)}))
+        Sequence.search([('prefix', '=', self.prefix_a)]).write({'last_number': 1})
+        self.assertEqual(Sequence._next(self.prefix_a), 2)
+        for number in (2, 3):
+            session = self.session()
+            product = self.product(biotex_reference='RESET-GLOBAL-NEW-MANUFACTURER-%s' % number)
+            session.workspace_add_products(product.ids)
+            session.clasificador_set_line_brand(session.line_ids.id, self.brand_a.id)
+            self.assertEqual(session.line_ids.folio, '%02d' % number)
+            self.confirm(session)
+            self.assertEqual(product.default_code, self.prefix_a + '-%02d' % number)
+        self.assertEqual(valid.default_code, self.prefix_a + '-01')
+        self.assertEqual(old.line_ids.applied_reference_after, self.prefix_a + '-03')
+        self.assertEqual(History.search([('prefix', '=', self.prefix_a)]).read(['code', 'consecutive']), history)
 
     # ------------------------------------------------------------ paso 1: llave base sin marca
     def test_session_is_complete_with_three_levels_and_adds_products_without_folio(self):

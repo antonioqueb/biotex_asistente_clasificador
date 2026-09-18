@@ -13,8 +13,13 @@ class ProductSequence(models.Model):
         base sin marca), así que se consultan por ``line_class_code``.
         """
         observed = super()._observed_max(prefix)
+        boundary = self._reset_boundary(prefix)
         self.env['biotex.classification.session.line'].flush_model(['line_class_code', 'consecutive'])
         self.env.cr.execute(
-            'SELECT coalesce(max(consecutive), 0) FROM biotex_classification_session_line WHERE line_class_code = %s',
-            (prefix,))
+            '''SELECT coalesce(max(l.consecutive), 0)
+                 FROM biotex_classification_session_line l
+                 JOIN biotex_classification_session s ON s.id = l.session_id
+                WHERE l.line_class_code = %s
+                  AND (%s OR l.id > %s OR s.state = 'draft')''',
+            (prefix, not boundary, boundary['line_id'] if boundary else 0))
         return max(observed, int(self.env.cr.fetchone()[0]))
