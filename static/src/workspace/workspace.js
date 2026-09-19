@@ -2,7 +2,6 @@
 import { registry } from "@web/core/registry";
 import { _t } from "@web/core/l10n/translation";
 import { BiotexClassificationWorkspace } from "@biotex_catalog/classification/classification";
-import { BiotexImageGalleryDialog } from "@biotex_catalog/classification/image_gallery_dialog";
 import { BiotexClassBadge } from "@biotex_catalog/fields/class_badge";
 import { BiotexClasificadorLineEditorDialog } from "./line_editor";
 
@@ -15,7 +14,7 @@ const CONTEXT = { clasificador: true };
  *
  * - Paso 1: grupo, familia y clasificador (sin marca). Los selectores releen el catálogo al abrirse.
  * - Paso 2: cada resultado muestra el estado de catálogo (badge `biotex_class_state`) y el de sesión,
- *   con las acciones Ver imágenes, Editar y +Agregar. Editar clasifica sin pasar por +Agregar y es
+ *   con Editar como única acción. El modal es
  *   donde se confirma la marca (que reserva el folio). No hay acción de eliminar.
  * - Paso 3: ordenado por marca y folio; se refresca con cada edición. La columna Acciones abre el mismo
  *   modal de edición (editLine), también al retomar una sesión sin terminar.
@@ -122,7 +121,7 @@ export class BiotexClasificadorWorkspace extends BiotexClassificationWorkspace {
         if (!this.stageReachable(stage)) {
             this.notification.add(
                 stage === 2 ? _t("Elija grupo, familia y clasificador para continuar.")
-                            : _t("Agregue o edite al menos un producto para continuar."),
+                            : _t("Edite al menos un producto para continuar."),
                 { type: "warning" });
             return;
         }
@@ -163,45 +162,30 @@ export class BiotexClasificadorWorkspace extends BiotexClassificationWorkspace {
     /** Línea de esta sesión que ya corresponde al producto buscado (si se agregó o editó). */
     lineOf(record) { return record.line || this.lines.find((line) => line.product_id === record.id) || null; }
 
-    canAdd(record) { return !record.locked_by && !this.lineOf(record); }
-
-    /** "+Agregar": incorpora el producto con la marca pendiente; la fila se queda en el resultado para editarla. */
-    async addProduct(record, { clearQuery = false, query = this.state.search.query } = {}) {
-        if (this.confirmed || this.state.busy || this.lineOf(record)) return false;
-        if (record.reclassify_from && !record._reclassifyAccepted) {
-            this.confirmReclassify([record], () => this.addProduct({ ...record, _reclassifyAccepted: true }, { clearQuery, query }));
-            return false;
-        }
-        this.state.busy = true;
-        this.searchVersion++;
+    /** Teclado y lector abren la misma edición que el botón; no incorporan productos sin abrir el modal. */
+    async onSearchKeydown(ev) {
+        if (ev.key !== "Enter") return super.onSearchKeydown(ev);
+        if (ev.isComposing || ev.repeat) return;
+        ev.preventDefault();
+        if (this.searchKeyBusy || this.state.busy || this.confirmed) return;
+        this.searchKeyBusy = true;
+        this.debouncedSearch.cancel();
         try {
-            const data = await this.orm.call(MODEL, "workspace_add_products", [[this.state.session.id]], { product_ids: [record.id] });
-            this.applySession(data);
-            this.notifySkipped(data);
-            this.state.search.selectedId = null;
-            if (clearQuery && this.state.search.query === query) this.state.search.query = "";
-            await this.runSearch(this.state.search.offset);
-            if (this.lineOf(record)) {
-                this.notification.add(_t("Producto agregado con marca pendiente. Usa Editar para asignar la marca y reservar el folio."), { type: "success" });
+            const selectedId = this.state.search.selectedId;
+            if (!await this.runSearch(this.state.search.offset)) return;
+            const records = this.state.search.records;
+            const record = this.state.scan
+                ? (this.state.search.total === 1 ? records[0] : null)
+                : (selectedId ? records.find((row) => row.id === selectedId) : (this.state.search.total === 1 ? records[0] : null));
+            if (record) {
+                await this.editProduct(record);
+            } else {
+                this.notification.add(_t("Selecciona un resultado con las flechas y pulsa Enter para editarlo."), { type: "info" });
             }
-            return true;
-        } catch (e) {
-            this.notify(e);
         } finally {
-            this.state.busy = false;
-            this.searchInput.el?.focus();
-            if (!clearQuery && this.state.search.query === query) this.searchInput.el?.select();
+            this.searchKeyBusy = false;
         }
     }
-
-    openRecordImages(record) {
-        const line = this.lineOf(record);
-        const images = (line?.images?.length ? line.images : record.images) || [];
-        if (!images.length) return;
-        this.dialog.add(BiotexImageGalleryDialog, { title: line?.new_name || record.name, images: images.slice(0, 3) });
-    }
-
-    recordImageCount(record) { return Math.min(((this.lineOf(record)?.images?.length ? this.lineOf(record).images : record.images) || []).length, 3); }
 
     /**
      * Editar desde el paso 2: agrega el producto a la sesión si hace falta (marca pendiente) y abre el

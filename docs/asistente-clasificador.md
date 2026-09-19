@@ -1,6 +1,6 @@
 # Clasificador Global — especificación implementada
 
-Módulo `biotex_asistente_clasificador` 19.0.1.2.0 · 12 de septiembre de 2026 (ampliado el 14 de septiembre de 2026) · requiere `biotex_catalog` 19.0.3.5.3.
+Módulo `biotex_asistente_clasificador` 19.0.1.3.0 · actualizado el 19 de septiembre de 2026 · requiere `biotex_catalog` 19.0.3.5.3.
 
 ## Arquitectura: extensión, no copia
 
@@ -28,14 +28,14 @@ El resultado de búsqueda **incluye los productos ya agregados a la sesión** (a
 ya no edita, este es el único lugar donde se edita. Cada fila usa dos renglones: nombre y, debajo, los badges:
 
 - `biotex_class_state` (widget `biotex_class_badge`, con los faltantes en el título).
-- Estado de sesión: "En clasificación" (otra sesión en curso; solo Ver imágenes), "Otra clasificación" (clave completa con
+- Estado de sesión: "En clasificación" (otra sesión en curso; edición bloqueada), "Otra clasificación" (clave completa con
   otra familia/clasificador, o con otra marca ya confirmada; rojo), "Ya en esta clasificación" (clave completa con la misma
   familia y clasificador; tercer estado sugerido en 3.4), y "Marca pendiente" / "Clasificado" para las líneas de la sesión.
 - Columna Referencia: código final o pendiente `GG-FFF-CCC-????-??` (punteado, naranja).
-- Acciones: **Ver imágenes** (galería existente, imágenes de la ficha o las pendientes de la línea), **Editar** y **+Agregar**
-  (solo si aún no está en la sesión). No existe eliminar.
+- Acción única: **Editar**. No hay botón ni flujo de incorporación sin abrir la edición. Enter y el lector de códigos
+  abren el mismo modal; las imágenes siguen disponibles dentro del modal.
 
-**Editar sin +Agregar**: `clasificador_edit_product` agrega la línea si no existe (marca pendiente) y abre el modal. Un producto
+**Editar**: `clasificador_edit_product` crea la línea si no existe (marca pendiente) y abre el modal. Un producto
 con clave de otra clasificación pide aceptar primero (mismo diálogo con ambas claves).
 
 ### Modal de edición
@@ -84,19 +84,27 @@ Al guardar desde el modal (`workspace_update_line`) un producto con marca y foli
 de seguridad. La migración `19.0.1.2.0` registra `folio_root` en los borradores existentes con folio (consistentes con la raíz
 vigente porque el `write` de la sesión renumera al cambiar grupo, familia o clasificador).
 
-### Unidades y empaques en el modal (cambio 3, 14 sep 2026)
+### Unidades y empaques en el modal (actualizado el 19 sep 2026)
 Las secciones «Unidad indivisible» y «Empacados de productos y códigos de barras» se fusionan en una tabla **Unidades y empaques**
-(Tipo de empaque / Cantidad (en la unidad base) / Código de barras):
+(Tipo de empaque / Cantidad de elementos / Código de barras):
 
 - **Primera fila, fija: la unidad base.** Registro sintético derivado del `uom_id` de la línea (no es un `product.uom`), con ícono
-  de llave, fondo de acento propio, texto «PIEZA · Unidad base» (el nombre de la unidad del catálogo), cantidad 1 deshabilitada,
-  código de barras editable (`line.barcode`, que al confirmar se escribe en `product.barcode`) y candado en lugar de eliminar: no
+  de llave, fondo de acento propio, texto «BOLSA · Unidad base» y cantidad de elementos editable (valor inicial 1).
+  El código de barras sigue editable (`line.barcode`, que al confirmar se escribe en `product.barcode`); la fila no
   se elimina ni se reordena (regla resuelta en el widget OWL, no con reglas de acceso). Un enlace discreto «Cambiar unidad» muestra
   el selector de unidad (el mismo de antes) para no perder la captura de la unidad indivisible; con movimientos de inventario no
   aparece y se muestra el mensaje «esa unidad se conserva» (`uom_locked`, mismo bloqueo de siempre en cliente y servidor).
+- **Descripción de la unidad**, de solo lectura, muestra `{UNIDAD} CON {CANTIDAD}` y responde al cambio de unidad o cantidad.
+  Se permiten cantidades finitas mayores que cero, incluidos decimales; vacío, cero, negativos e infinitos se rechazan en cliente
+  y servidor. El contenido se guarda en `base_unit_quantity` de la línea y se aplica a `product.template.biotex_base_unit_quantity`
+  al confirmar. Los campos calculados `base_unit_description` y `biotex_base_unit_description` permiten leer la misma descripción
+  desde Odoo. La cantidad se puede editar incluso con movimientos: es información de contenido, no una conversión de inventario.
 - **Debajo, los empacados** (`presentation_data`): tipo de empaque por combo, cantidad en unidades base, código de barras y su
   eliminar; **Agregar empacado** al pie de la misma tabla. Al confirmar la sesión se escriben como registros reales de
   `product.uom` con código de barras (`_biotex_set_presentations`; en Odoo 19 `product.uom` sustituye a `product.packaging`).
+
+Una BOLSA CON 3 sigue siendo una unidad vendida. Un empacado de 10 BOLSAS sigue siendo 10 unidades base; no cambia a 30.
+La actualización 19.0.1.3.0 crea los campos con valor inicial 1 y no reescribe códigos ni cantidades de inventario.
 
 Íconos: el backend de Odoo 19 no carga Tabler Icons, así que `ti-edit`, `ti-key` y `ti-lock` se representan con Font Awesome
 (`fa-pencil`, `fa-key`, `fa-lock`), la misma fuente que usa el resto del asistente.
@@ -137,7 +145,7 @@ Con usuario **Clasificador de catálogo** en QA:
 |---|---|---|
 | A | Paso 1: elegir grupo, familia y clasificador. | Sin campo Marca; resumen `GG-FFF-CCC-????-??`; sesión creada. |
 | B | Crear una familia y un clasificador en otra pestaña; abrir de nuevo el selector. | Aparecen sin recargar. |
-| C | Buscar; revisar badges de una fila sin clave, una completa de esta familia/clasificador, una de otra y una en otra sesión. | "Sin clasificar" / "Ya en esta clasificación" / "Otra clasificación" (rojo) / "En clasificación"; acciones Ver imágenes, Editar, +Agregar; sin eliminar. |
+| C | Buscar; revisar badges de una fila sin clave, una completa de esta familia/clasificador, una de otra y una en otra sesión. | Badges conservados; única acción Editar, bloqueada en otra sesión; Enter y lector abren el modal. |
 | D | Editar un producto sin +Agregar; elegir marca; Confirmar. | La línea se crea; la referencia pasa de `????-??` al folio final; el paso 3 lo muestra sin recargar. |
 | E | Dos productos con marcas distintas; un tercero con la primera. | Folios `MMMM1-01`, `MMMM2-01`, `MMMM1-02`; paso 3 ordenado por marca y folio. |
 | F | Producto ya clasificado con esta familia/clasificador: confirmar su misma marca. | Referencia y nombre conservados; sin folio nuevo; nombre bloqueado. |
@@ -149,7 +157,7 @@ Con usuario **Clasificador de catálogo** en QA:
 | L | Retomar una sesión sin terminar con todo clasificado; pulsar el lápiz en el paso 3. | Se abre «Editando producto» con ese producto; al guardar, el paso 3 se refresca. |
 | M | Producto con marca y folio; guardar sin cambiar la raíz. | Marca y folio iguales; referencia refrescada. |
 | N | Producto con folio de otra raíz (`folio_root` distinto) al abrir el modal. | Aviso naranja; Guardar abre «La raíz de clasificación cambió»; al aceptar, folio nuevo de la misma marca y luego guarda. Sin aceptar, el servidor rechaza el guardado. |
-| O | Modal: tabla «Unidades y empaques». | Primera fila fija (llave, «PIEZA · Unidad base», cantidad 1 deshabilitada, solo código de barras editable, candado); empacados debajo con eliminar; «Agregar empacado» añade filas debajo. Con movimientos de inventario no hay «Cambiar unidad» y se muestra «esa unidad se conserva». |
+| O | Modal: tabla «Unidades y empaques». | Cantidad base editable, descripción BOLSA CON 3 / CAJA CON 10 al cambiar cantidad y unidad; rechaza valores inválidos. Empacados conservan sus multiplicadores. Los movimientos bloquean cambiar unidad, pero no editar su contenido. |
 
 ## Verificación automatizada
 - `tests/test_clasificador.py`: 18 casos (llave base, folio por llave, contador compartido, caso A, caso B, otra clasificación,

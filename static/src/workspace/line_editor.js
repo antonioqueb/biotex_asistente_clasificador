@@ -22,7 +22,7 @@ const MODEL = "biotex.classification.session";
  * referencia; si la raíz cambió, el modal lo avisa y exige "Cambiar marca y reservar folio" antes de guardar.
  *
  * Unidades y empaques: una sola tabla. La primera fila es la unidad indivisible (unidad base) derivada del
- * `uom_id` de la línea: fija, cantidad 1, solo su código de barras es editable; debajo, los empacados reales
+ * `uom_id` de la línea: fija, con cantidad de elementos y código de barras editables; debajo, los empacados reales
  * (`presentation_data`, que al confirmar se escriben como `product.uom` con código de barras).
  */
 export class BiotexClasificadorLineEditorDialog extends BiotexLineEditorDialog {
@@ -41,7 +41,12 @@ export class BiotexClasificadorLineEditorDialog extends BiotexLineEditorDialog {
         this.brandSearchVersion = 0;
         this.state.uomEditing = false;
         // la sugerencia de marca se calcula cuando la línea ya está cargada (onWillStart del modal base)
-        onMounted(() => this.ensureBrandSuggestion());
+        onMounted(() => {
+            const quantity = this.line.base_unit_quantity ?? 1;
+            this.state.draft.base_unit_quantity = quantity;
+            this.state.initial.base_unit_quantity = quantity;
+            this.ensureBrandSuggestion();
+        });
     }
 
     // ------------------------------------------------------------------ estado
@@ -293,6 +298,14 @@ export class BiotexClasificadorLineEditorDialog extends BiotexLineEditorDialog {
     /** Nombre de la unidad base tal como se muestra en la primera fila fija. */
     get baseUnitLabel() { return this.baseUomName || this.line.product_uom_name || "—"; }
 
+    get baseUnitQuantity() { return this.state.draft.base_unit_quantity ?? this.line.base_unit_quantity ?? 1; }
+
+    get baseUnitDescription() {
+        const quantity = Number(this.baseUnitQuantity);
+        return this.state.draft.uom_id && Number.isFinite(quantity) && quantity > 0
+            ? `${this.baseUnitLabel.toUpperCase()} CON ${quantity}` : "";
+    }
+
     /** La unidad base se puede cambiar salvo con movimientos de inventario (esa unidad se conserva) o en solo lectura. */
     get canChangeBaseUom() { return !this.props.readonly && !this.line.uom_locked; }
 
@@ -308,6 +321,12 @@ export class BiotexClasificadorLineEditorDialog extends BiotexLineEditorDialog {
     validate() {
         const ok = super.validate();
         if (this.state.errors.uom_id) this.state.uomEditing = true;  // el selector de la fila base aparece para corregir
+        const quantity = Number(this.baseUnitQuantity);
+        if (!Number.isFinite(quantity) || quantity <= 0) {
+            this.state.errors.base_unit_quantity = _t("La cantidad de elementos debe ser un número mayor que cero.");
+            this.scrollToFirstError();
+            return false;
+        }
         return ok;
     }
 

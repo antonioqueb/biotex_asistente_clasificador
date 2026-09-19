@@ -19,7 +19,7 @@
         color: #c2410c; border: 1px dashed #fdba74; border-radius: 6px; padding: 0 6px; background: #fff7ed;
     }
     .o_bac_text_pending { color: #c2410c; }
-    .o_bac_w_act { width: 230px; white-space: nowrap; }
+    .o_bac_w_act { width: 120px; white-space: nowrap; }
     .o_bac_actions { display: flex; align-items: center; gap: 6px; }
     .o_bac_edit { width: auto; padding: 0 10px; gap: 6px; font-weight: 600; }
     .o_bac_table tbody tr.o_bac_row_in_session td { background: #f8fafc; }
@@ -77,7 +77,8 @@
     .o_bac_unit_base_name { font-weight: 600; color: var(--bcw-ink, #1d2939); white-space: nowrap; }
     .o_bac_unit_change { font-size: 12px; color: var(--bcw-family, #7c3aed); }
     .o_bac_unit_select { flex: 1 1 180px; min-width: 160px; width: auto; }
-    .o_bac_unit_lock { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; color: var(--bcw-ink-2, #667085); }
-    tr.o_bac_unit_base .o_bcw_qty_unit .o_bcw_input:disabled { background: #f5f3ff; color: var(--bcw-ink, #1d2939); font-weight: 600; }
+    .o_bac_unit_description { margin-top: 8px; }
+    .o_bac_unit_description label { display: block; font-size: 12px; color: var(--bcw-ink-2, #667085); }
+    .o_bac_unit_description input { font-weight: 600; background: transparent; }
     tr.o_bac_unit_base .o_bcw_help, tr.o_bac_unit_base .o_bcw_error { margin-top: 4px; }
 }

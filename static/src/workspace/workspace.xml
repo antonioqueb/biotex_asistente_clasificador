@@ -155,7 +155,7 @@
                 <header class="o_bcw_stage_head" t-on-click="() => this.goStage(2)">
                     <span class="o_bcw_num o_bcw_tone_brand">2</span>
                     <div class="o_bcw_stage_titles">
-                        <h2>Busca, agrega y clasifica productos</h2>
+                        <h2>Busca, edita y clasifica productos</h2>
                         <p>Edita cada producto para asignarle marca y reservar su folio. Ver imágenes abre su galería.</p>
                     </div>
                     <div class="o_bcw_stage_mini" t-if="state.collapsed[2] and lines.length">
@@ -181,13 +181,13 @@
                                    t-on-input="onSearchInput" t-on-keydown="onSearchKeydown"/>
                             <button class="o_bcw_scan" t-att-class="{o_bcw_scan_on: state.scan}" t-on-click="toggleScan"
                                     t-att-aria-pressed="state.scan ? 'true' : 'false'" aria-label="Modo lector de código de barras"
-                                    title="Lector de código de barras: al leer un código con un resultado único, se agrega solo.">
+                                    title="Lector de código de barras: un resultado único abre la edición.">
                                 <i class="fa fa-barcode"/>
                             </button>
                         </div>
 
                         <p id="bac_search_help" class="o_bcw_hint mb-2">
-                            Flechas para seleccionar; Enter para agregar. Los productos de esta sesión siguen en la lista con su código
+                            Flechas para seleccionar; Enter para editar. Los productos de esta sesión siguen en la lista con su código
                             <span class="o_bac_code_pending" t-esc="pendingCode"/> hasta que confirmes su marca desde Editar.
                         </p>
                         <div class="o_bcw_table_wrap" t-ref="searchResults" role="region" aria-label="Resultados de búsqueda" tabindex="0" t-att-aria-busy="state.search.loading ? 'true' : 'false'">
@@ -235,20 +235,10 @@
                                         </td>
                                         <td class="o_bac_w_act">
                                             <div class="o_bac_actions">
-                                                <button type="button" class="o_bcw_icon_btn" t-att-disabled="!recordImageCount(record)"
-                                                        t-att-title="recordImageCount(record) ? 'Ver imágenes (' + recordImageCount(record) + ')' : 'Sin imágenes'"
-                                                        t-att-aria-label="'Ver imágenes de ' + record.name" t-on-click="() => this.openRecordImages(record)">
-                                                    <i class="fa fa-picture-o" aria-hidden="true"/>
-                                                </button>
                                                 <button t-if="!record.locked_by" type="button" class="o_bcw_icon_btn o_bac_edit" t-att-disabled="confirmed or state.busy or state.search.loading"
                                                         t-att-title="line ? 'Editar y asignar marca' : 'Editar: agrega el producto a la sesión y permite asignar la marca'"
                                                         t-att-aria-label="'Editar ' + record.name" t-on-click="() => this.editProduct(record)">
                                                     <i class="fa fa-pencil" aria-hidden="true"/> Editar
-                                                </button>
-                                                <button t-if="canAdd(record)" type="button" class="o_bcw_add" t-on-click="() => this.addProduct(record)"
-                                                        t-att-disabled="confirmed or state.busy or state.search.loading" t-att-aria-label="'Agregar ' + record.name"
-                                                        title="Agregar a la sesión con la marca pendiente">
-                                                    <i class="fa fa-plus"/> Agregar
                                                 </button>
                                                 <span t-if="record.locked_by" class="o_bcw_hint" t-att-title="record.locked_by">En otra sesión</span>
                                             </div>

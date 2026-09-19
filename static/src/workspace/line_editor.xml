@@ -70,23 +70,23 @@
         <xpath expr="//select[@id='bcw_editor_uom']/../.." position="replace"/>
 
         <!-- Unidad base + empacados en una sola tabla. La fila base es sintética (uom_id de la línea): no es un
-             product.uom, no se elimina ni se reordena y su única captura es el código de barras del producto. -->
+             product.uom, no se elimina ni se reordena; su contenido no cambia factores de conversión. -->
         <xpath expr="//section[@aria-label='Empacados de productos y códigos de barras']" position="replace">
             <section class="o_bcw_editor_block o_bac_units" aria-label="Unidades y empaques">
                 <div class="o_bcw_editor_heading">
                     <h5>Unidades y empaques</h5>
-                    <p>La primera fila es la unidad indivisible del producto (unidad base). Debajo, un renglón por cada tipo de empaque: cuántas unidades base contiene y su código de barras.</p>
+                    <p>La primera fila indica cuántos elementos contiene una unidad base. Se compra, vende y cuenta como una unidad. Los empacados indican cuántas unidades base contienen.</p>
                 </div>
                 <div class="table-responsive">
                     <table class="table table-sm o_bcw_rows o_bac_units_table">
                         <thead><tr>
                             <th class="o_bcw_col_type">Tipo de empaque</th>
-                            <th>Cantidad (en <t t-esc="baseUnitLabel"/>)</th>
+                            <th>Cantidad de elementos</th>
                             <th>Código de barras</th>
                             <th class="o_bac_units_act"/>
                         </tr></thead>
                         <tbody>
-                            <tr class="o_bac_unit_base" t-att-class="{ 'o_bac_unit_base--error': state.errors.uom_id }">
+                            <tr class="o_bac_unit_base" t-att-class="{ 'o_bac_unit_base--error': state.errors.uom_id || state.errors.base_unit_quantity }">
                                 <td>
                                     <div class="o_bac_unit_base_cell">
                                         <i class="fa fa-key o_bac_unit_key" aria-hidden="true" title="Unidad base del producto"/>
@@ -106,20 +106,25 @@
                                         </t>
                                     </div>
                                     <small t-if="state.line.uom_locked" class="o_bcw_help d-block"><i class="fa fa-lock me-1" aria-hidden="true"/>El producto ya tiene movimientos de inventario en <strong t-esc="state.line.product_uom_name"/>: esa unidad se conserva. Registra cajas, bolsas u otros empaques como empacados con su equivalencia.</small>
-                                    <small t-elif="!state.uomEditing" class="o_bcw_help d-block">Una misma unidad para comprar, vender y contar. Las cajas se registran como empacados.</small>
+                                    <small t-elif="!state.uomEditing" class="o_bcw_help d-block">Una misma unidad para comprar, vender y contar, cualquiera que sea su contenido.</small>
                                     <small t-if="state.errors.uom_id" class="o_bcw_error d-block" t-esc="state.errors.uom_id"/>
+                                    <div class="o_bac_unit_description">
+                                        <label for="bac_base_unit_description">Descripción de la unidad</label>
+                                        <input id="bac_base_unit_description" class="o_bcw_input" t-att-value="baseUnitDescription" readonly="readonly" aria-live="polite"/>
+                                    </div>
                                 </td>
                                 <td>
                                     <div class="o_bcw_qty_unit">
-                                        <input aria-label="Cantidad de la unidad base" class="o_bcw_input" type="number" value="1" disabled="disabled" title="La unidad base siempre es 1"/>
-                                        <span class="o_bcw_qty_unit_label" t-esc="baseUnitLabel"/>
+                                        <input aria-label="Cantidad de elementos de la unidad base" class="o_bcw_input" type="number" min="0" step="any" required="required"
+                                               t-att-value="baseUnitQuantity" t-att-readonly="props.readonly" t-att-aria-invalid="!!state.errors.base_unit_quantity"
+                                               t-att-class="{ 'o_bcw_input--error': state.errors.base_unit_quantity }" t-on-input="(ev) => this.onNumber('base_unit_quantity', ev)"/>
+                                        <span class="o_bcw_qty_unit_label">elementos</span>
                                     </div>
+                                    <small t-if="state.errors.base_unit_quantity" class="o_bcw_error d-block" t-esc="state.errors.base_unit_quantity"/>
                                 </td>
                                 <td><input aria-label="Código de barras de la unidad base" class="o_bcw_input o_bcw_mono o_bac_unit_barcode" placeholder="Código de barras de la pieza"
                                            t-att-value="state.draft.barcode" t-att-readonly="props.readonly" t-on-input="(ev) => this.onInput('barcode', ev)"/></td>
-                                <td class="o_bac_units_act">
-                                    <span class="o_bac_unit_lock" role="img" aria-label="Unidad base: no se elimina ni se reordena" title="Unidad base: no se elimina ni se reordena"><i class="fa fa-lock" aria-hidden="true"/></span>
-                                </td>
+                                <td class="o_bac_units_act"/>
                             </tr>
                             <tr t-foreach="state.draft.presentation_data" t-as="row" t-key="row_index" class="o_bac_unit_pack">
                                 <td>

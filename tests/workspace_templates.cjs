@@ -103,7 +103,7 @@ function applyInheritance(window, xmlSources) {
             if (method === 'workspace_search_products') return { total: records.length, offset: 0, limit: 20, records };
             if (method === 'clasificador_edit_product') return { line_id: 4, session: session() };
             if (method === 'workspace_line_detail') return { line: { ...(w.detailLine || lines[3]), photos: [], country_ids: [], equipment_ids: [], specialty_ids: [], measure_data: [], presentation_data: [] },
-                catalogs: { uoms: [{ id: 1, name: 'Unidades' }], package_types: [], countries: [], brands: [], specialties: [], contents: [], measure_types: [] },
+                catalogs: { uoms: [{ id: 1, name: 'Unidades' }, { id: 2, name: 'BOLSA' }, { id: 3, name: 'CAJA' }], package_types: [], countries: [], brands: [], specialties: [], contents: [], measure_types: [] },
                 classification_brand_id: false, classification_brand_name: '', brand_manufacturer_id: false, brand_manufacturer_name: '',
                 brand_hints: [4], pending_code: `${base}-????-??`, session_code: base };
             if (method === 'clasificador_brands') { brandReads++; return [{ id: 4, name: 'Alfa', code: 'AAAA', used: true, manufacturer: '' }, { id: 5, name: 'Zeta', code: 'ZZZZ', used: false, manufacturer: '' }]; }
@@ -171,16 +171,26 @@ function applyInheritance(window, xmlSources) {
     assert.match(rows[4].textContent, /En clasificación/);
     assert.ok(!doc.querySelector('.o_bac_table .fa-trash-o, .o_bac_table .o_bcw_danger'), 'ninguna acción de eliminar en el paso 2');
     assert.ok(rows[1].querySelector('.o_bac_edit') && rows[2].querySelector('.o_bac_edit') && !rows[4].querySelector('.o_bac_edit'), 'Editar salvo en otra sesión');
-    assert.ok(!rows[0].querySelector('.o_bcw_add') && rows[2].querySelector('.o_bcw_add'), '+Agregar solo para productos fuera de la sesión');
-    assert.equal(rows[1].querySelector('.o_bac_actions .o_bcw_icon_btn').disabled, false, 'Ver imágenes activo con imagen');
-    assert.equal(rows[0].querySelector('.o_bac_actions .o_bcw_icon_btn').disabled, true, 'Ver imágenes inactivo sin imagen');
-    rows[1].querySelector('.o_bac_actions .o_bcw_icon_btn').click(); await tick();
-    assert.equal(w.dialogs.at(-1).props.images.length, 1, 'Ver imágenes abre la galería con las imágenes del producto');
+    assert.equal(doc.querySelectorAll('.o_bac_table .o_bcw_add').length, 0, 'no hay Agregar en ningún resultado');
+    for (const row of rows.slice(0, 4)) {
+        assert.equal(row.querySelectorAll('.o_bac_actions button').length, 1, 'Editar es la única acción por producto');
+        assert.match(row.querySelector('.o_bac_actions button').textContent, /Editar/);
+    }
     rows[3].querySelector('.o_bac_edit').click(); await tick();
     assert.equal(w.dialogs.at(-1).component.name, 'ConfirmationDialog', 'editar un producto de otra clasificación pide aceptar');
     rows[2].querySelector('.o_bac_edit').click(); await tick();
     assert.equal(calls.at(-1).method, 'clasificador_edit_product', 'Editar sin +Agregar agrega la línea');
     assert.equal(w.dialogs.at(-1).component.name, 'BiotexClasificadorLineEditorDialog');
+    ws.state.search.selectedId = 200;
+    await ws.onSearchKeydown({ key: 'Enter', preventDefault() {} }); await tick();
+    assert.equal(calls.at(-1).method, 'clasificador_edit_product', 'Enter abre Editar');
+    const savedRecords = records.splice(0, records.length, records[2]);
+    ws.state.scan = true;
+    await ws.onSearchKeydown({ key: 'Enter', preventDefault() {} }); await tick();
+    assert.equal(calls.at(-1).method, 'clasificador_edit_product', 'el lector también abre Editar');
+    assert.ok(!calls.some((call) => call.method === 'workspace_add_products'), 'ninguna acción usa la incorporación sin edición');
+    records.splice(0, records.length, ...savedRecords);
+    ws.state.scan = false;
     // paso 3: solo lectura, por marca y folio, con pendientes aparte
     ws.goStage(3); await tick();
     const done = [...doc.querySelectorAll('.o_bac_table_done tbody tr')].map((tr) => tr.children[3].textContent.trim());
@@ -197,12 +207,15 @@ function applyInheritance(window, xmlSources) {
     assert.equal(w.dialogs.at(-1).props.lineId, 2, 'precargado con la línea de la fila (AAAA-02)');
     assert.equal(w.dialogs.at(-1).props.classCode, `${base}-AAAA-02`);
     assert.match(doc.querySelector('.o_bac_pending').textContent, /1 producto\(s\) sin marca/);
+    assert.match(doc.querySelector('.o_bcw_stage3_meta [role="status"]').textContent, /Clasificados:\s*3\s*· Marcas:\s*2\s*·\s*Sin marca:\s*1/);
     assert.equal(doc.querySelector('.o_bcw_foot .btn-primary').disabled, true, 'Generar claves bloqueado con pendientes');
     // refresco en vivo: una edición devuelve la sesión y el paso 3 se reubica solo
     lines[3] = { ...lines[3], brand_id: 4, brand_code: 'AAAA', brand_short: 'Alfa', consecutive: 3, reference: `${base}-AAAA-03`, display_code: `${base}-AAAA-03`, folio: '03', folio_number: 3, classified: true };
     w.dialogs.at(-1).props.onSaved(session()); await tick();
     assert.equal(doc.querySelectorAll('.o_bac_table_done tbody tr').length, 4, 'la línea recién clasificada se inserta');
     assert.ok(!doc.querySelector('.o_bac_pending'));
+    assert.match(doc.querySelector('.o_bcw_stage3_meta [role="status"]').textContent, /Clasificados:\s*4\s*· Marcas:\s*2/);
+    assert.doesNotMatch(doc.querySelector('.o_bcw_stage3_meta [role="status"]').textContent, /Sin marca/);
     assert.equal(doc.querySelector('.o_bcw_foot .btn-primary').disabled, false);
     // reubicación por cambio de marca (caso B): la línea 1 pasa de Zeta a Alfa
     lines[0] = { ...lines[0], brand_id: 4, brand_code: 'AAAA', brand_short: 'Alfa', consecutive: 4, reference: `${base}-AAAA-04`, display_code: `${base}-AAAA-04`, folio: '04', folio_number: 4 };
@@ -247,22 +260,48 @@ function applyInheritance(window, xmlSources) {
     assert.ok(!doc.querySelector('.o_bcw_grid #bcw_editor_uom'), 'la unidad indivisible deja de ser un campo suelto');
     const units = doc.querySelector('[aria-label="Unidades y empaques"]');
     assert.ok(units, 'sección unificada');
-    assert.match(units.querySelector('thead').textContent, /Tipo de empaque.*Cantidad \(en Unidades\).*Código de barras/s);
+    assert.match(units.querySelector('thead').textContent, /Tipo de empaque.*Cantidad de elementos.*Código de barras/s);
     const baseRow = units.querySelector('tbody tr');
     assert.ok(baseRow.classList.contains('o_bac_unit_base'), 'la primera fila es la unidad base');
     assert.match(baseRow.children[0].textContent, /Unidades · Unidad base/);
     assert.ok(baseRow.querySelector('.fa-key'), 'ícono de llave');
     assert.ok(!baseRow.querySelector('select'), 'la unidad base se muestra como texto fijo');
     const baseQty = baseRow.children[1].querySelector('input');
-    assert.equal(baseQty.disabled, true); assert.equal(baseQty.value, '1');
+    assert.equal(baseQty.disabled, false); assert.equal(baseQty.readOnly, false); assert.equal(baseQty.value, '1');
+    const description = doc.querySelector('#bac_base_unit_description');
+    assert.equal(description.readOnly, true);
+    assert.equal(description.value, 'UNIDADES CON 1');
+    baseQty.value = '3'; baseQty.dispatchEvent(new w.Event('input')); await tick();
+    assert.equal(description.value, 'UNIDADES CON 3', 'la descripción responde a la cantidad');
+    for (const value of ['', '0', '-2']) {
+        baseQty.value = value; baseQty.dispatchEvent(new w.Event('input')); await tick();
+        assert.equal(editor.validate(), false);
+        assert.ok(editor.state.errors.base_unit_quantity);
+    }
+    baseQty.value = '2.5'; baseQty.dispatchEvent(new w.Event('input')); await tick();
+    assert.equal(editor.validate(), true, 'se aceptan cantidades decimales positivas');
+    assert.equal(description.value, 'UNIDADES CON 2.5');
+    baseQty.value = '3'; baseQty.dispatchEvent(new w.Event('input')); await tick();
     const baseBarcode = baseRow.querySelector('.o_bac_unit_barcode');
     assert.equal(baseBarcode.readOnly, false, 'el código de barras de la unidad base sí se edita');
     baseBarcode.value = '7501234567890'; baseBarcode.dispatchEvent(new w.Event('input')); await tick();
     assert.equal(editor.state.draft.barcode, '7501234567890');
-    assert.ok(baseRow.querySelector('.o_bac_unit_lock .fa-lock') && !baseRow.querySelector('.fa-trash'), 'candado en vez de eliminar');
+    assert.ok(!baseRow.querySelector('.o_bac_unit_lock, .fa-trash'), 'sin candado de cantidad ni eliminar');
     // la unidad base sigue pudiéndose cambiar (sin movimientos) con "Cambiar unidad"
     baseRow.querySelector('.o_bac_unit_change').click(); await tick();
     assert.ok(units.querySelector('tr.o_bac_unit_base select#bcw_editor_uom'), 'el selector aparece dentro de la fila base');
+    const selectUnit = units.querySelector('#bcw_editor_uom');
+    selectUnit.value = '2'; selectUnit.dispatchEvent(new w.Event('change')); await tick();
+    assert.equal(description.value, 'BOLSA CON 3', 'la descripción responde al cambio de unidad');
+    editor.startUomEdit(); await tick();
+    const selectBox = units.querySelector('#bcw_editor_uom');
+    selectBox.value = '3'; selectBox.dispatchEvent(new w.Event('change'));
+    baseQty.value = '10'; baseQty.dispatchEvent(new w.Event('input')); await tick();
+    assert.equal(description.value, 'CAJA CON 10');
+    await editor.save();
+    assert.equal(calls.at(-1).method, 'workspace_update_line');
+    assert.equal(calls.at(-1).args[2].base_unit_quantity, 10, 'guardar envía el contenido propio de la unidad');
+    editor.state.draft.uom_id = 1;
     editor.cancelUomEdit(); await tick();
     assert.ok(!units.querySelector('tr.o_bac_unit_base select'));
     // empacados: debajo de la fila base, con su eliminar, y "Agregar empacado" al final de la misma tabla
@@ -275,15 +314,23 @@ function applyInheritance(window, xmlSources) {
     editorApp.destroy();
 
     // fila base bloqueada por movimientos de inventario: sin "Cambiar unidad", con el mensaje de conservación
-    w.detailLine = line(4, { uom_locked: true });
+    w.detailLine = line(4, { uom_locked: true, base_unit_quantity: 3 });
     const lockedApp = new w.owl.App(w.Editor, { templates, dev: true, props: { close() {}, lineId: 4, sessionId: 7, classCode: `${base}-????-??`, readonly: false, onSaved() {}, onBrandChanged() {} } });
     const lockedEditor = await lockedApp.mount(w.document.body); await tick();
     const lockedRow = doc.querySelector('[aria-label="Unidades y empaques"] tbody tr.o_bac_unit_base');
     assert.ok(!lockedRow.querySelector('.o_bac_unit_change'), 'con movimientos no se ofrece cambiar la unidad');
     assert.match(lockedRow.textContent, /esa unidad se conserva/);
+    const lockedQty = lockedRow.querySelector('[aria-label="Cantidad de elementos de la unidad base"]');
+    assert.equal(lockedQty.value, '3', 'se recupera la cantidad guardada');
+    assert.equal(lockedEditor.dirty, false, 'cargar el contenido no crea cambios pendientes');
+    assert.equal(lockedQty.readOnly, false, 'los movimientos no bloquean el contenido informativo');
     lockedEditor.startUomEdit(); await tick();
     assert.ok(!lockedRow.querySelector('select'), 'ni por código');
     lockedApp.destroy();
+    const readonlyApp = new w.owl.App(w.Editor, { templates, dev: true, props: { close() {}, lineId: 4, sessionId: 7, readonly: true, onSaved() {}, onBrandChanged() {} } });
+    await readonlyApp.mount(w.document.body); await tick();
+    assert.equal(doc.querySelector('[aria-label="Cantidad de elementos de la unidad base"]').readOnly, true, 'la sesión confirmada sigue en solo lectura');
+    readonlyApp.destroy();
 
     // ------------------------------------------------------------ cambio 2: regla de raíz al guardar
     w.detailLine = line(4, { brand_id: 4, brand_code: 'AAAA', brand_short: 'Alfa', brand_name: 'AAAA · Alfa', consecutive: 7, reference: 'CE-XXX-EKG-AAAA-07', display_code: 'CE-XXX-EKG-AAAA-07',

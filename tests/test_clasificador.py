@@ -1,7 +1,8 @@
 """Clasificador Global: marca y folio por producto, casos A/B, paso 3 y convivencia con el asistente base."""
 import json
+from unittest.mock import patch
 
-from odoo.exceptions import UserError
+from odoo.exceptions import UserError, ValidationError
 from odoo.tests import TransactionCase, tagged
 from odoo.tests.common import new_test_user
 
@@ -85,6 +86,86 @@ class TestClasificador(TransactionCase):
         self.assertEqual(History.search([('prefix', '=', self.prefix_a)]).read(['code', 'consecutive']), history)
 
     # ------------------------------------------------------------ paso 1: llave base sin marca
+    def test_base_unit_content_roundtrip_preserves_packaging_and_reference(self):
+        bag = self.env['uom.uom'].create({'name': 'BOLSA'})
+        product = self.classified_product(self.prefix_a + '-09', uom_id=bag.id,
+                                          biotex_base_unit_quantity=3, biotex_consecutive=9,
+                                          biotex_reference='CONTENT-ROUNDTRIP')
+        package_type = self.env['biotex.package.type'].search([('name', '=', 'CAJA')], limit=1)
+        if not package_type:
+            package_type = self.env['biotex.package.type'].create({'name': 'CAJA'})
+        product._biotex_set_presentations([{'package_type_id': package_type.id, 'quantity': 10, 'barcode': ''}])
+        packaging = product._biotex_presentation_data()
+        units = product.product_variant_id.product_uom_ids.uom_id
+        factors = units.mapped('relative_factor')
+        session = self.session()
+        edited = session.clasificador_edit_product(product.id)
+        line = session.line_ids
+        self.assertEqual(edited['line_id'], line.id)
+        self.assertEqual(line._workspace_detail()['base_unit_description'], 'BOLSA CON 3')
+        session.clasificador_set_line_brand(line.id, self.brand_a.id)
+        reference = line.reference
+        next_number = self.env['biotex.product.sequence']._next(self.prefix_a)
+        session.workspace_update_line(line.id, {'base_unit_quantity': 2.5})
+        self.assertEqual(line._workspace_detail()['base_unit_quantity'], 2.5)
+        self.assertEqual(line.base_unit_description, 'BOLSA CON 2.5')
+        self.assertEqual(product.biotex_base_unit_quantity, 3, 'guardar el borrador no aplica al producto')
+        self.assertEqual(line.reference, reference)
+        self.assertEqual(self.env['biotex.product.sequence']._next(self.prefix_a), next_number)
+        self.confirm(session)
+        self.assertEqual(product.biotex_base_unit_quantity, 2.5)
+        self.assertEqual(product.biotex_base_unit_description, 'BOLSA CON 2.5')
+        self.assertEqual(product.default_code, reference)
+        self.assertEqual(product.uom_id, bag)
+        self.assertEqual(product._biotex_presentation_data(), packaging)
+        self.assertEqual(units.mapped('relative_factor'), factors)
+        reopened = self.session()
+        reopened.clasificador_edit_product(product.id)
+        self.assertEqual(reopened.line_ids._workspace_detail()['base_unit_quantity'], 2.5)
+
+    def test_base_unit_description_changes_with_unit_and_quantity(self):
+        session = self.session()
+        product = self.product()
+        self.assertEqual(product.biotex_base_unit_quantity, 1)
+        session.clasificador_edit_product(product.id)
+        line = session.line_ids
+        box = self.env['uom.uom'].create({'name': 'CAJA'})
+        session.workspace_update_line(line.id, {'base_unit_quantity': 10, 'uom_id': box.id})
+        self.assertEqual(line.base_unit_description, 'CAJA CON 10')
+        self.assertEqual(line._workspace_detail()['base_unit_description'], 'CAJA CON 10')
+        self.assertEqual(product.biotex_base_unit_quantity, 1)
+        product.write({'uom_id': box.id, 'biotex_base_unit_quantity': 7})
+        self.assertEqual(product.biotex_base_unit_description, 'CAJA CON 7')
+
+    def test_invalid_base_content_rejected_without_partial_save(self):
+        session = self.session()
+        product = self.product()
+        session.clasificador_edit_product(product.id)
+        line = session.line_ids
+        for value in (0, -1, '', None, True, 'abc', float('nan'), float('inf'), -float('inf')):
+            with self.subTest(value=value), self.assertRaises(ValidationError), self.env.cr.savepoint():
+                session.workspace_update_line(line.id, {'base_unit_quantity': value, 'notes': 'NO GUARDAR'})
+        self.assertFalse(line.notes)
+        self.assertEqual(line.base_unit_quantity, 1)
+        for value in (0, -1, float('nan'), float('inf')):
+            with self.subTest(direct=value), self.assertRaises(ValidationError), self.env.cr.savepoint():
+                product.write({'biotex_base_unit_quantity': value})
+        self.assertEqual(product.biotex_base_unit_quantity, 1)
+
+    def test_inventory_unit_lock_does_not_lock_informational_content(self):
+        session = self.session()
+        product = self.product()
+        session.clasificador_edit_product(product.id)
+        line = session.line_ids
+        box = self.env['uom.uom'].create({'name': 'CAJA'})
+        with patch.object(type(line), '_uom_locked', return_value=True):
+            session.workspace_update_line(line.id, {'base_unit_quantity': 3})
+            self.assertEqual(line.base_unit_quantity, 3)
+            with self.assertRaises(UserError), self.env.cr.savepoint():
+                session.workspace_update_line(line.id, {'uom_id': box.id, 'base_unit_quantity': 10})
+        self.assertEqual(line.uom_id, product.uom_id)
+        self.assertEqual(line.base_unit_quantity, 3)
+
     def test_session_is_complete_with_three_levels_and_adds_products_without_folio(self):
         self.assertIsNone(self.Session().workspace_set_classification(False, {'group_id': self.group.id, 'family_id': self.family.id, 'brand_per_line': True}))
         session = self.session()
@@ -433,7 +514,7 @@ class TestClasificador(TransactionCase):
     def test_classic_sessions_keep_their_behaviour(self):
         classic = self.env['biotex.classification.session'].with_user(self.operator).create({
             'group_id': self.group.id, 'family_id': self.family.id, 'classifier_id': self.classifier.id, 'brand_id': self.brand_a.id})
-        product = self.product(biotex_brand_id=self.brand_b.id)
+        product = self.product(biotex_brand_id=self.brand_b.id, biotex_base_unit_quantity=3)
         classic.workspace_add_products(product.ids)
         line = classic.line_ids
         self.assertEqual(line.brand_id, self.brand_b, 'en la sesión clásica la línea conserva la marca de la ficha como atributo')
@@ -448,3 +529,4 @@ class TestClasificador(TransactionCase):
             classic.clasificador_set_line_brand(line.id, self.brand_a.id)
         self.confirm(classic)
         self.assertEqual((product.default_code, product.biotex_brand_id), (self.prefix_a + '-01', self.brand_a))
+        self.assertEqual(product.biotex_base_unit_quantity, 3, 'el asistente clásico conserva el contenido')
