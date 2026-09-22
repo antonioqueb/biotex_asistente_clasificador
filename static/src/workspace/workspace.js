@@ -132,6 +132,25 @@ export class BiotexClasificadorWorkspace extends BiotexClassificationWorkspace {
     }
 
     // ================================================================= paso 2: búsqueda y acciones
+    get canCreateProduct() {
+        return this.classificationComplete && !!this.state.session && !this.confirmed && !this.state.busy;
+    }
+
+    async newProduct() {
+        if (!this.canCreateProduct) return;
+        this.state.busy = true;
+        try {
+            const data = await this.orm.call(MODEL, "clasificador_new_product", [[this.state.session.id]]);
+            this.applySession(data.session);
+            const line = this.lines.find((row) => row.id === data.line_id);
+            if (line) await this.editLine(line);
+        } catch (e) {
+            this.notify(e);
+        } finally {
+            this.state.busy = false;
+        }
+    }
+
     /** Igual que el asistente base, pero sin ocultar los productos ya agregados: aquí se editan. */
     async runSearch(offset) {
         if (!this.state.session || this.destroyed) return false;
@@ -215,29 +234,43 @@ export class BiotexClasificadorWorkspace extends BiotexClassificationWorkspace {
 
     async editLine(line) {
         await this.saveQueue;
+        const sessionId = this.state.session.id;
+        let saved = false;
         this.dialog.add(BiotexClasificadorLineEditorDialog, {
             lineId: line.id,
             sessionId: this.state.session.id,
             classCode: line.reference || this.pendingCode,
             readonly: this.confirmed,
+            newProduct: !!line.is_new_product,
             // cada guardado y cada marca confirmada devuelven la sesión: el paso 3 se refresca al momento
-            onSaved: (session) => { this.applySession(session); this.clearLineErrors(line.id); },
+            onSaved: (session) => { saved = true; this.applySession(session); this.clearLineErrors(line.id); },
             onBrandChanged: (session) => this.applySession(session),
         }, {
-            onClose: () => { if (!this.destroyed) this.runSearch(this.state.search.offset); },
+            onClose: async () => {
+                try {
+                    if (line.is_new_product && !saved) {
+                        const session = await this.orm.call(MODEL, "clasificador_cancel_new_product", [[sessionId], line.id]);
+                        if (!this.destroyed && this.state.session?.id === sessionId) this.applySession(session);
+                    }
+                } catch (e) {
+                    if (!this.destroyed) this.notify(e);
+                } finally {
+                    if (!this.destroyed && this.state.session?.id === sessionId) this.runSearch(this.state.search.offset);
+                }
+            },
         });
     }
 
     // ================================================================= paso 3: clasificados (editables con el lápiz)
     /** Productos con marca y folio, por marca y dentro de cada marca por folio ascendente. */
     get classifiedLines() {
-        return this.lines.filter((line) => line.classified).sort((a, b) =>
+        return this.lines.filter((line) => line.classified && !line.is_new_product).sort((a, b) =>
             (a.brand_short || "").localeCompare(b.brand_short || "", "es", { sensitivity: "base" })
             || (a.brand_code || "").localeCompare(b.brand_code || "")
             || (a.folio_number - b.folio_number) || (a.id - b.id));
     }
 
-    get pendingLines() { return this.lines.filter((line) => !line.classified); }
+    get pendingLines() { return this.lines.filter((line) => !line.classified || line.is_new_product); }
 
     /** Marcas distintas del paso 3, para el resumen del encabezado. */
     get brandCount() { return new Set(this.classifiedLines.map((line) => line.brand_id)).size; }
@@ -250,6 +283,11 @@ export class BiotexClasificadorWorkspace extends BiotexClassificationWorkspace {
 
     // ================================================================= cierre
     async confirm() {
+        if (this.pendingLines.some((line) => line.is_new_product)) {
+            this.notification.add(_t("Hay un alta sin guardar. Usa «Continuar alta» para terminarla o cerrar su editor sin guardar."), { type: "warning" });
+            this.goStage(3);
+            return;
+        }
         if (this.pendingLines.length) {
             this.notification.add(
                 _t("Hay %s producto(s) sin marca o folio. Asigna la marca desde Editar en el paso 2 antes de generar claves.", this.pendingLines.length),

@@ -29,6 +29,7 @@ export class BiotexClasificadorLineEditorDialog extends BiotexLineEditorDialog {
     static template = "biotex_asistente_clasificador.LineEditorDialog";
     static props = {
         ...BiotexLineEditorDialog.props,
+        newProduct: { type: Boolean, optional: true },
         onBrandChanged: Function,
     };
 
@@ -42,15 +43,17 @@ export class BiotexClasificadorLineEditorDialog extends BiotexLineEditorDialog {
         this.state.uomEditing = false;
         // la sugerencia de marca se calcula cuando la línea ya está cargada (onWillStart del modal base)
         onMounted(() => {
-            const quantity = this.line.base_unit_quantity ?? 1;
+            const quantity = this.isNewProduct && !this.line.new_name ? "" : (this.line.base_unit_quantity ?? 1);
             this.state.draft.base_unit_quantity = quantity;
             this.state.initial.base_unit_quantity = quantity;
+            if (this.isNewProduct && !this.state.draft.uom_id) this.state.uomEditing = true;
             this.ensureBrandSuggestion();
         });
     }
 
     // ------------------------------------------------------------------ estado
     get line() { return this.state.line || {}; }
+    get isNewProduct() { return !!(this.props.newProduct || this.line.is_new_product); }
     get brandConfirmedId() { return this.line.brand_id || false; }
     get brandConfirmedLabel() { return this.line.brand_name || ""; }
     get brandCatalogLabel() { return this.line.suggested_brand_name || ""; }
@@ -59,7 +62,9 @@ export class BiotexClasificadorLineEditorDialog extends BiotexLineEditorDialog {
     /** La referencia del encabezado: la final si ya hay folio, si no la pendiente GG-FFF-CCC-????-??. */
     get referenceSegments() {
         const code = this.line.reference || this.line.pending_code || this.props.classCode || "";
-        return code ? referenceTones(code) : [];
+        return code ? referenceTones(code).map((segment) => ({
+            ...segment, tone: /^\?+$/.test(segment.text) ? "consecutive" : segment.tone,
+        })) : [];
     }
 
     /** Sugerencia inicial: la marca actual de la ficha, cuando la línea aún no tiene marca confirmada. */
@@ -288,10 +293,28 @@ export class BiotexClasificadorLineEditorDialog extends BiotexLineEditorDialog {
 
     /** Guardar: con la raíz cambiada no se guarda una referencia inconsistente; primero se reserva el folio nuevo. */
     async save() {
+        if (this.state.brand.confirming) return;
         if (this.rootMismatch && this.brandConfirmedId && !this.props.readonly && !this.state.saving) {
             return this.reserveFolioForRoot(() => this.save());
         }
-        return super.save();
+        if (!this.isNewProduct) return super.save();
+        if (this.props.readonly || this.state.saving || this.state.readingImages || !this.validate()) return;
+        this.state.saving = true;
+        try {
+            const vals = { ...this.state.draft };
+            vals.package_qty = vals.package_qty === "" ? 1 : vals.package_qty;
+            if (!(vals.base_name || "").trim()) vals.base_name = vals.new_name;
+            const session = await this.orm.call(MODEL, "clasificador_create_product", [
+                [this.props.sessionId], this.props.lineId, vals,
+            ]);
+            this.props.onSaved(session);
+            this.notification.add(_t("Producto creado"), { type: "success" });
+            this.props.close();
+        } catch (e) {
+            this.notification.add(e.data?.message || e.message, { type: "danger", sticky: true });
+        } finally {
+            this.state.saving = false;
+        }
     }
 
     // ------------------------------------------------------------------ unidades y empaques (tabla unificada)
@@ -320,6 +343,9 @@ export class BiotexClasificadorLineEditorDialog extends BiotexLineEditorDialog {
 
     validate() {
         const ok = super.validate();
+        if (this.isNewProduct && !this.line.classified) {
+            this.state.errors.brand_id = _t("Confirma la marca y reserva el folio antes de crear el producto.");
+        }
         if (this.state.errors.uom_id) this.state.uomEditing = true;  // el selector de la fila base aparece para corregir
         const quantity = Number(this.baseUnitQuantity);
         if (!Number.isFinite(quantity) || quantity <= 0) {
@@ -327,12 +353,13 @@ export class BiotexClasificadorLineEditorDialog extends BiotexLineEditorDialog {
             this.scrollToFirstError();
             return false;
         }
-        return ok;
+        return ok && !this.state.errors.brand_id;
     }
 
     /** Aplica la línea devuelta por el servidor sin perder lo que el usuario escribió en el resto del modal. */
     refreshLine(detail) {
         this.state.line = { ...this.state.line, ...detail };
+        if (detail.classified) delete this.state.errors.brand_id;
         if (detail.preserve_reference) {
             // clave y nombre conservados: el nombre vuelve al de la ficha
             this.state.draft.new_name = detail.new_name || this.state.draft.new_name;

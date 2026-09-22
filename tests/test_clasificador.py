@@ -31,6 +31,157 @@ class TestClasificador(TransactionCase):
         cls.colleague = new_test_user(ctx, login='clasificador_colleague', groups='biotex_catalog.group_catalog_classifier')
 
     # ------------------------------------------------------------ helpers
+    def new_line(self, session):
+        data = session.clasificador_new_product()
+        return session.line_ids.filtered(lambda line: line.id == data['line_id'])
+
+    def new_values(self, **extra):
+        return dict(new_name='Insumo nuevo', uom_id=self.env.ref('uom.product_uom_unit').id,
+                    base_unit_quantity=1, **extra)
+
+    def test_new_draft_is_empty_and_does_not_create_or_reserve(self):
+        session = self.session()
+        products_before = self.env['product.template'].search_count([])
+        next_number = self.env['biotex.product.sequence']._next(self.prefix_a)
+        line = self.new_line(session)
+        detail = session.workspace_line_detail(line.id)['line']
+        self.assertTrue(detail['is_new_product'])
+        for key in ('product_id', 'new_name', 'old_name', 'brand_id', 'uom_id', 'reference',
+                    'manufacturer_id', 'barcode', 'model', 'package_type_id', 'notes',
+                    'measure_data', 'presentation_data', 'country_ids', 'equipment_ids', 'specialty_ids'):
+            self.assertFalse(detail[key], key)
+        self.assertEqual(detail['pending_code'], self.base + '-????-??')
+        self.assertEqual(self.env['product.template'].search_count([]), products_before)
+        self.assertEqual(self.env['biotex.product.sequence']._next(self.prefix_a), next_number)
+        with self.assertRaisesRegex(UserError, 'marca'):
+            session.clasificador_create_product(line.id, self.new_values())
+        session.clasificador_set_line_brand(line.id, self.brand_a.id)
+        self.assertFalse(line.product_id, 'confirmar marca solo reserva el folio')
+        self.assertEqual(session.pending_count, 1, 'el alta no está terminada hasta guardar')
+        with self.assertRaisesRegex(UserError, 'alta sin guardar'):
+            session.action_confirm()
+
+    def test_new_product_defaults_details_audit_and_session(self):
+        session = self.session()
+        line = self.new_line(session)
+        session.clasificador_set_line_brand(line.id, self.brand_a.id)
+        reference = line.reference
+        next_number = self.env['biotex.product.sequence']._next(self.prefix_a)
+        country = self.env.ref('base.mx')
+        package_type = self.env['biotex.package.type'].search([], limit=1)
+        values = self.new_values(manufacturer_ref='FAB-ALTA', notes='Nota de alta',
+            country_ids=country.ids, internal_notes='Información interna',
+            presentation_data=[{'package_type_id': package_type.id, 'quantity': 10, 'barcode': ''}])
+        values['base_unit_quantity'] = 3
+        # Los defaults operativos no aceptan overrides enviados fuera del modal.
+        values.update(type='service', is_storable=False, tracking='none', invoice_policy='delivery',
+                      purchase_ok=False, sale_ok=False)
+        data = session.clasificador_create_product(line.id, values)
+        product = line.product_id
+        self.assertEqual((product.type, product.is_storable, product.tracking, product.invoice_policy,
+                          product.purchase_ok, product.sale_ok), ('consu', True, 'lot', 'order', True, True))
+        self.assertEqual(product.create_uid, self.operator, 'el alta respeta al usuario; no usa sudo')
+        self.assertEqual(product.name, 'INSUMO NUEVO')
+        self.assertEqual(product.default_code, reference)
+        self.assertEqual((product.categ_id, product.biotex_classifier_id, product.biotex_brand_id),
+                         (self.family, self.classifier, self.brand_a))
+        self.assertEqual(product.uom_id.id, values['uom_id'])
+        self.assertEqual(product.biotex_base_unit_quantity, 3)
+        self.assertEqual(product.biotex_reference, 'FAB-ALTA')
+        self.assertEqual(product.biotex_internal_notes, 'INFORMACIÓN INTERNA')
+        self.assertIn(country, product.biotex_country_ids)
+        self.assertEqual(product._biotex_presentation_data()[0]['quantity'], 10)
+        audit = product.message_ids.filtered(lambda message: 'Alta de producto desde el Clasificador Global.' in (message.body or ''))
+        self.assertEqual(len(audit), 1)
+        for value in ('Nombre:', 'Categoría:', 'Referencia:', 'Unidad de Medida:', 'Usuario:', 'Fecha (UTC):',
+                      product.name, reference, product.uom_id.display_name, self.operator.display_name,
+                      self.group.display_name, self.family.display_name, self.classifier.display_name):
+            self.assertIn(value, audit.body)
+        row = next(row for row in data['lines'] if row['id'] == line.id)
+        self.assertFalse(row['is_new_product'])
+        self.assertTrue(row['classified'])
+        self.assertEqual(row['product_id'], product.id)
+        self.assertEqual(row['state'], 'draft', 'el producto sigue editable en la sección 3')
+        self.assertEqual(row['old_name'], product.name)
+        session.workspace_update_line(line.id, {'notes': 'Editado en sección 3'})
+        self.confirm(session)
+        self.assertEqual(product.biotex_characteristics, 'EDITADO EN SECCIÓN 3')
+        self.assertEqual(product.default_code, reference)
+        self.assertEqual(self.env['biotex.product.sequence']._next(self.prefix_a), next_number)
+
+    def test_new_product_save_is_idempotent_and_cancel_never_deletes_it(self):
+        session = self.session()
+        line = self.new_line(session)
+        session.clasificador_set_line_brand(line.id, self.brand_a.id)
+        values = self.new_values()
+        session.clasificador_create_product(line.id, values)
+        product = line.product_id
+        count = self.env['product.template'].search_count([])
+        messages = product.message_ids
+        session.clasificador_create_product(line.id, values)
+        session.clasificador_cancel_new_product(line.id)
+        self.assertEqual(line.product_id, product)
+        self.assertEqual(self.env['product.template'].search_count([]), count)
+        self.assertEqual(product.message_ids, messages)
+        self.assertTrue(line.exists())
+
+    def test_new_product_cancel_only_removes_its_draft(self):
+        session = self.session()
+        line = self.new_line(session)
+        session.clasificador_set_line_brand(line.id, self.brand_a.id)
+        reserved = line.consecutive
+        products_before = self.env['product.template'].search_count([])
+        session.clasificador_cancel_new_product(line.id)
+        self.assertFalse(line.exists())
+        self.assertEqual(self.env['product.template'].search_count([]), products_before)
+        replacement = self.new_line(session)
+        session.clasificador_set_line_brand(replacement.id, self.brand_a.id)
+        self.assertGreater(replacement.consecutive, reserved)
+        session.clasificador_cancel_new_product(line.id)  # cerrar dos veces es inocuo
+        self.assertTrue(replacement.exists())
+
+    def test_new_product_requires_global_base_and_its_own_draft(self):
+        empty = self.Session().create({'brand_per_line': True})
+        with self.assertRaisesRegex(UserError, 'llave base'):
+            empty.clasificador_new_product()
+        classic = self.Session().create({'group_id': self.group.id, 'family_id': self.family.id,
+                                        'classifier_id': self.classifier.id, 'brand_id': self.brand_a.id})
+        with self.assertRaisesRegex(UserError, 'Clasificador Global'):
+            classic.clasificador_new_product()
+        session, other = self.session(), self.session()
+        line = self.new_line(session)
+        with self.assertRaisesRegex(UserError, 'pertenece'):
+            other.clasificador_create_product(line.id, self.new_values())
+        other.clasificador_cancel_new_product(line.id)
+        self.assertTrue(line.exists())
+        with self.assertRaises(ValidationError):
+            self.env['biotex.classification.session.line'].create({'session_id': session.id})
+        with self.assertRaisesRegex(UserError, 'origen'):
+            line.write({'new_product': False})
+
+    def test_new_product_invalid_details_roll_back_the_entire_creation(self):
+        session = self.session()
+        line = self.new_line(session)
+        session.clasificador_set_line_brand(line.id, self.brand_a.id)
+        reference = line.reference
+        self.product(barcode='ALTA-BARCODE-OCUPADO')
+        count = self.env['product.template'].search_count([])
+        for invalid in ({'new_name': ''}, {'uom_id': False}, {'base_unit_quantity': 0},
+                        {'barcode': 'ALTA-BARCODE-OCUPADO'}):
+            with self.assertRaises((UserError, ValidationError)):
+                session.clasificador_create_product(line.id, {**self.new_values(), **invalid})
+            self.assertFalse(line.product_id)
+        with patch.object(type(self.env['product.template']), '_biotex_set_presentations',
+                          side_effect=UserError('Empaque inválido')):
+            with self.assertRaisesRegex(UserError, 'Empaque inválido'):
+                session.clasificador_create_product(line.id, self.new_values())
+        self.assertFalse(line.product_id)
+        self.assertFalse(line.new_name, 'el savepoint revierte también los datos del borrador')
+        self.assertEqual(line.reference, reference, 'se conserva la reserva realizada antes del intento')
+        self.assertEqual(self.env['product.template'].search_count([]), count)
+        session.clasificador_create_product(line.id, self.new_values())
+        self.assertEqual(line.product_id.default_code, reference)
+
     def product(self, **extra):
         return self.env['product.template'].create(dict({'name': 'Clasificador fixture'}, **extra))
 

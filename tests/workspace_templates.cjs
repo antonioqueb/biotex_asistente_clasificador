@@ -83,7 +83,7 @@ function applyInheritance(window, xmlSources) {
         line(4, { suggested_brand_id: 4, suggested_brand_name: 'AAAA · Alfa' }),
     ];
     const session = () => ({ id: 7, state: 'draft', class_code: base, complete: true, group_id: 1, family_id: 2, classifier_id: 3, brand_id: false,
-        brand_per_line: true, pending_count: lines.filter((l) => !l.classified).length, pending_code: `${base}-????-??`, lines: lines.map((l) => ({ ...l })) });
+        brand_per_line: true, pending_count: lines.filter((l) => !l.classified || l.is_new_product).length, pending_code: `${base}-????-??`, lines: lines.map((l) => ({ ...l })) });
     const tree = [{ id: 1, code: 'CE', name: 'Consumibles', axis: 'Equipo', division: 'D', families: [
         { id: 2, code: 'TCL', name: 'Familia', composite: 'CE-TCL', classifiers: [{ id: 3, code: 'EKG', name: 'Electro' }] }] }];
     const records = [
@@ -102,13 +102,31 @@ function applyInheritance(window, xmlSources) {
             if (method === 'biotex_get_tree') { treeReads++; return tree; }
             if (method === 'workspace_search_products') return { total: records.length, offset: 0, limit: 20, records };
             if (method === 'clasificador_edit_product') return { line_id: 4, session: session() };
-            if (method === 'workspace_line_detail') return { line: { ...(w.detailLine || lines[3]), photos: [], country_ids: [], equipment_ids: [], specialty_ids: [], measure_data: [], presentation_data: [] },
+            if (method === 'clasificador_new_product') {
+                const id = Math.max(...lines.map((l) => l.id)) + 1;
+                lines.push(line(id, { product_id: false, old_name: '', new_name: '', uom_id: false,
+                    product_uom_id: false, product_uom_name: '', is_new_product: true }));
+                return { line_id: id, session: session() };
+            }
+            if (method === 'clasificador_cancel_new_product') {
+                const index = lines.findIndex((l) => l.id === args[1] && l.is_new_product);
+                if (index !== -1) lines.splice(index, 1);
+                return session();
+            }
+            if (method === 'clasificador_create_product') {
+                if (w.createError) throw new Error('No se pudo guardar el producto');
+                const l = lines.find((l) => l.id === args[1]);
+                Object.assign(l, args[2], { is_new_product: false, product_id: 9000 + l.id,
+                    old_name: args[2].new_name.toUpperCase(), new_name: args[2].new_name.toUpperCase(), preserve_reference: true });
+                return session();
+            }
+            if (method === 'workspace_line_detail') return { line: { ...(w.detailLine || lines.find((l) => l.id === args[1])), photos: [], country_ids: [], equipment_ids: [], specialty_ids: [], measure_data: [], presentation_data: [] },
                 catalogs: { uoms: [{ id: 1, name: 'Unidades' }, { id: 2, name: 'BOLSA' }, { id: 3, name: 'CAJA' }], package_types: [], countries: [], brands: [], specialties: [], contents: [], measure_types: [] },
                 classification_brand_id: false, classification_brand_name: '', brand_manufacturer_id: false, brand_manufacturer_name: '',
                 brand_hints: [4], pending_code: `${base}-????-??`, session_code: base };
             if (method === 'clasificador_brands') { brandReads++; return [{ id: 4, name: 'Alfa', code: 'AAAA', used: true, manufacturer: '' }, { id: 5, name: 'Zeta', code: 'ZZZZ', used: false, manufacturer: '' }]; }
             if (method === 'clasificador_set_line_brand') {
-                const l = lines[3]; Object.assign(l, { brand_id: kwargs?.brand_id ?? args[2], brand_code: 'AAAA', brand_short: 'Alfa', brand_name: 'AAAA · Alfa', consecutive: 3, reference: `${base}-AAAA-03`, display_code: `${base}-AAAA-03`, folio: '03', folio_number: 3, classified: true, line_class_code: `${base}-AAAA` });
+                const l = lines.find((l) => l.id === args[1]); Object.assign(l, { brand_id: kwargs?.brand_id ?? args[2], brand_code: 'AAAA', brand_short: 'Alfa', brand_name: 'AAAA · Alfa', consecutive: 3, reference: `${base}-AAAA-03`, display_code: `${base}-AAAA-03`, folio: '03', folio_number: 3, classified: true, line_class_code: `${base}-AAAA` });
                 return { session: session(), line: { ...l } };
             }
             if (method === 'clasificador_reserve_folio') {
@@ -357,6 +375,102 @@ function applyInheritance(window, xmlSources) {
     // el botón Cambiar marca y reservar folio se desactiva de nuevo hasta elegir otra marca
     assert.equal(doc.querySelector('.o_bac_brand_confirm').disabled, true);
     rootApp.destroy();
+
+    // ------------------------------------------------------------ alta desde cero y regreso al mismo editor
+    delete w.detailLine;
+    const newWorkspaceApp = new w.owl.App(w.Workspace, { templates, dev: true,
+        props: { action: { context: { biotex_session_id: 7 } } } });
+    const newWorkspace = await newWorkspaceApp.mount(w.document.body); await tick();
+    const newButton = doc.querySelector('.o_bac_new_product');
+    assert.ok(newButton, 'Nuevo está en el encabezado de la sección 2');
+    assert.ok(newButton.closest('.o_bac_search_head'));
+    assert.equal(newButton.disabled, false);
+    newWorkspace.state.pick.classifier = false; await tick();
+    assert.equal(newButton.disabled, true, 'misma condición de llave base completa');
+    const beforeDisabled = calls.length;
+    await newWorkspace.newProduct();
+    assert.equal(calls.length, beforeDisabled, 'sin llave no llama al servidor');
+    newWorkspace.state.pick.classifier = 3; await tick();
+    assert.equal(newButton.disabled, false);
+    newWorkspace.state.busy = true; await tick();
+    assert.equal(newButton.disabled, true, 'evita altas durante otra operación');
+    newWorkspace.state.busy = false;
+    newWorkspace.state.session.state = 'confirmed'; await tick();
+    assert.equal(newButton.disabled, true, 'una sesión aplicada es de consulta');
+    newWorkspace.state.session.state = 'draft'; await tick();
+    newButton.click(); await tick();
+    const newDialog = w.dialogs.at(-1);
+    assert.equal(newDialog.component, w.Editor, 'reutiliza el editor estándar');
+    assert.equal(newDialog.props.newProduct, true);
+    assert.equal(newWorkspace.pendingLines.at(-1).is_new_product, true);
+    let closes = 0;
+    const newEditorApp = new w.owl.App(w.Editor, { templates, dev: true, props: {
+        ...newDialog.props, close() { closes++; },
+    } });
+    const newEditor = await newEditorApp.mount(w.document.body); await tick();
+    let title = doc.querySelector('.o_bac_editor_title');
+    assert.ok(title.classList.contains('o_bac_editor_title_new'), 'título de alta con acento');
+    assert.ok(title.querySelector('.fa-plus-circle'), 'ícono de crear');
+    assert.match(title.textContent, /Nuevo producto/);
+    assert.equal(title.querySelector('.o_bac_new_badge').textContent, 'NUEVO');
+    const reference = doc.querySelector('.o_bcw_modal_ref');
+    assert.equal(reference.getAttribute('aria-label'), 'Referencia pendiente');
+    assert.match(reference.textContent, /Referencia pendiente: el folio se reserva al confirmar la marca/);
+    for (const [tone, text] of [['group', 'CE'], ['family', 'TCL'], ['classifier', 'EKG']]) {
+        assert.equal(reference.querySelector(`.o_bcw_tone_${tone}`).textContent, text, 'conserva el color del segmento');
+    }
+    assert.equal(reference.querySelector('.o_bcw_tone_consecutive').textContent, '????', 'placeholder neutro');
+    for (const field of ['new_name', 'uom_id', 'manufacturer_id', 'barcode', 'notes', 'model',
+                         'description_extra', 'base_unit_quantity', 'package_type_id']) {
+        assert.ok(!newEditor.state.draft[field], `${field} empieza vacío`);
+    }
+    assert.equal(doc.querySelector('#bcw_editor_uom').value, '', 'unidad sin precargar');
+    assert.equal(doc.querySelector('[aria-label="Cantidad de elementos de la unidad base"]').value, '');
+    assert.equal(newEditor.state.draft.presentation_data.length, 0);
+    assert.equal(newEditor.state.draft.measure_data.length, 0);
+    assert.equal(newEditor.brandPendingId, false);
+    Object.assign(newEditor.state.draft, { new_name: 'Insumo nuevo', uom_id: 1, base_unit_quantity: 3 });
+    const beforeBrand = calls.length;
+    await newEditor.save(); await tick();
+    assert.ok(newEditor.state.errors.brand_id, 'marca y folio obligatorios para alta');
+    assert.ok(!calls.slice(beforeBrand).some((c) => c.method === 'clasificador_create_product'));
+    await newEditor.applyBrand(4); await tick();
+    assert.ok(!newEditor.state.errors.brand_id);
+    assert.equal(reference.getAttribute('aria-label'), 'Referencia final');
+    assert.match(reference.textContent, /Referencia final: el folio se reservó al confirmar la marca/);
+    assert.equal(newEditor.state.draft.new_name, 'Insumo nuevo', 'confirmar marca no borra lo capturado');
+    assert.ok(!newWorkspace.classifiedLines.some((l) => l.id === newDialog.props.lineId), 'el borrador no es un producto creado');
+    w.createError = true;
+    await newEditor.save(); await tick();
+    assert.equal(closes, 0, 'un error mantiene abierto el modal y preserva datos');
+    assert.equal(newEditor.state.draft.new_name, 'Insumo nuevo');
+    assert.equal(newEditor.state.saving, false);
+    w.createError = false;
+    const beforeSave = calls.length;
+    await newEditor.save(); await tick();
+    assert.equal(closes, 1);
+    assert.deepEqual(calls.slice(beforeSave).map((c) => c.method), ['clasificador_create_product']);
+    const created = newWorkspace.classifiedLines.find((l) => l.id === newDialog.props.lineId);
+    assert.ok(created?.product_id, 'Guardar incorpora el nuevo producto a la sección 3');
+    await newDialog.options.onClose();
+    assert.ok(!calls.slice(beforeSave).some((c) => c.method === 'clasificador_cancel_new_product'));
+    newEditorApp.destroy();
+    await newWorkspace.editLine(created);
+    const existingDialog = w.dialogs.at(-1);
+    const existingApp = new w.owl.App(w.Editor, { templates, dev: true, props: { ...existingDialog.props, close() {} } });
+    await existingApp.mount(w.document.body); await tick();
+    title = doc.querySelector('.o_bac_editor_title');
+    assert.match(title.textContent, /Editando Producto: INSUMO NUEVO/);
+    assert.ok(title.querySelector('.fa-pencil-square-o'));
+    assert.ok(!title.classList.contains('o_bac_editor_title_new'));
+    assert.ok(!title.querySelector('.o_bac_new_badge'), 'el editor de existentes no muestra NUEVO');
+    existingApp.destroy();
+    await newWorkspace.newProduct();
+    const cancelledDialog = w.dialogs.at(-1);
+    await cancelledDialog.options.onClose(); await tick();
+    assert.ok(!newWorkspace.lines.some((l) => l.id === cancelledDialog.props.lineId), 'cerrar descarta solo el borrador nuevo');
+    assert.ok(newWorkspace.lines.some((l) => l.id === created.id), 'el alta guardada se conserva');
+    newWorkspaceApp.destroy();
     dom.window.close();
-    console.log('Clasificador Global: plantillas OWL compiladas; paso 3 editable, tabla de unidades y empaques y regla de raíz OK');
+    console.log('Clasificador Global: OWL OK; edición, unidades, raíz, alta vacía, señales visuales, marca, guardado, sección 3 y cancelación');
 })().catch((error) => { console.error(error); process.exit(1); });

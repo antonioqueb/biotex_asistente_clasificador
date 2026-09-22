@@ -3,6 +3,20 @@
 
     <!-- El modal base más el campo Marca (debajo del nombre) y el texto del encabezado. -->
     <t t-name="biotex_asistente_clasificador.LineEditorDialog" t-inherit="biotex_catalog.LineEditorDialog" t-inherit-mode="primary">
+        <xpath expr="//h4[@class='o_bcw_modal_title']" position="replace">
+            <h4 class="o_bcw_modal_title o_bac_editor_title" t-att-class="{o_bac_editor_title_new: isNewProduct}">
+                <t t-if="isNewProduct">
+                    <i class="fa fa-plus-circle" aria-hidden="true"/>Nuevo producto
+                    <span class="o_bcw_chip o_bac_new_badge">NUEVO</span>
+                </t>
+                <t t-else="">
+                    <i class="fa fa-pencil-square-o" aria-hidden="true"/>Editando Producto: <span class="o_bcw_modal_product" t-esc="productTitle"/>
+                </t>
+            </h4>
+        </xpath>
+        <xpath expr="//div[@class='o_bcw_modal_ref']" position="attributes">
+            <attribute name="t-att-aria-label">line.classified ? 'Referencia final' : 'Referencia pendiente'</attribute>
+        </xpath>
         <xpath expr="//div[@class='o_bcw_modal_ref']/small" position="replace">
             <small class="o_bcw_help">
                 <t t-if="line.classified">Referencia final: el folio se reservó al confirmar la marca.</t>
@@ -61,6 +75,7 @@
                 </div>
 
                 <small class="o_bcw_help" t-esc="brandHelp"/>
+                <small t-if="state.errors.brand_id" class="o_bcw_error" t-esc="state.errors.brand_id"/>
                 <small t-if="!brandConfirmedId and brandCatalogLabel" class="o_bcw_help">Marca actual en la ficha: <strong t-esc="brandCatalogLabel"/> (sugerida; confírmala o elige otra).</small>
                 <small t-if="line.reclassify_from" class="o_bcw_warn"><i class="fa fa-exclamation-circle me-1" aria-hidden="true"/>Clave actual <span class="o_bcw_mono" t-esc="line.reclassify_from"/>: al generar claves recibirá la nueva y su numeración cambiará.</small>
             </div>

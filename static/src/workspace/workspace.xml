@@ -152,12 +152,16 @@
 
             <!-- ============================================== paso 2 -->
             <section class="o_bcw_stage" t-att-class="{o_bcw_stage_active: state.stage === 2, o_bcw_stage_locked: !stageReachable(2)}">
-                <header class="o_bcw_stage_head" t-on-click="() => this.goStage(2)">
+                <header class="o_bcw_stage_head o_bac_search_head" t-on-click="() => this.goStage(2)">
                     <span class="o_bcw_num o_bcw_tone_brand">2</span>
                     <div class="o_bcw_stage_titles">
                         <h2>Busca, edita y clasifica productos</h2>
                         <p>Edita cada producto para asignarle marca y reservar su folio. Ver imágenes abre su galería.</p>
                     </div>
+                    <button type="button" class="btn btn-sm o_bac_new_product" t-att-disabled="!canCreateProduct"
+                            title="Crear un producto con la llave base seleccionada" t-on-click.stop="newProduct">
+                        <i class="fa fa-plus-circle" aria-hidden="true"/> Nuevo
+                    </button>
                     <div class="o_bcw_stage_mini" t-if="state.collapsed[2] and lines.length">
                         <span class="o_bcw_chip"><t t-esc="lines.length"/> en sesión</span>
                         <span t-if="pendingLines.length" class="o_bcw_chip o_bcw_chip_pending"><t t-esc="pendingLines.length"/> sin marca</span>
@@ -366,13 +370,15 @@
                         <div t-if="pendingLines.length" class="o_bac_pending" role="status">
                             <div class="o_bac_pending_head">
                                 <i class="fa fa-clock-o" aria-hidden="true"/>
-                                <strong><t t-esc="pendingLines.length"/> producto(s) sin marca ni folio</strong>
-                                <span class="o_bcw_muted">— no se listan arriba ni permiten generar claves; asigna la marca desde Editar en el paso 2.</span>
+                                <strong><t t-esc="pendingLines.length"/> producto(s) <t t-esc="pendingLines.some((line) => line.is_new_product) ? 'por completar' : 'sin marca ni folio'"/></strong>
+                                <span class="o_bcw_muted">— confirma la marca desde Editar en el paso 2 o continúa el alta pendiente.</span>
                             </div>
                             <ul class="o_bac_pending_list">
                                 <li t-foreach="pendingLines" t-as="line" t-key="line.id">
                                     <span class="o_bac_code_pending o_bcw_mono" t-esc="line.display_code"/>
-                                    <span t-esc="line.new_name or line.old_name"/>
+                                    <span t-esc="line.new_name or line.old_name or 'Nuevo producto'"/>
+                                    <button t-if="line.is_new_product" type="button" class="btn btn-sm btn-link"
+                                            t-att-disabled="confirmed or state.busy" t-on-click="() => this.editLine(line)">Continuar alta</button>
                                 </li>
                             </ul>
                         </div>
