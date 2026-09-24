@@ -17,6 +17,21 @@ Ambos asistentes conviven: una sesión con `brand_per_line` pertenece a este; el
 
 Detalle funcional, decisiones tomadas sobre los puntos abiertos y casos de prueba: [`docs/asistente-clasificador.md`](docs/asistente-clasificador.md).
 
+## Revisión manual — 19.0.1.5.0
+
+El paso 2 muestra **Revisado / Pendiente de revisar**, con un selector para filtrar
+ambos estados. Dirección o un **Revisor de catálogo** pueden marcar o desmarcar
+directamente el producto con un clic. La revisión se guarda inmediatamente en
+`product.template.biotex_reviewed`, independientemente del estado verde de clasificación;
+no aplica los cambios pendientes de una sesión ni genera una bitácora adicional.
+
+Requiere actualizar conjuntamente **biotex_catalog 19.0.3.8.0**. La casilla también se
+encuentra en la ficha del producto, **Clasificación → Revisión manual**, y en los filtros
+nativos del catálogo. Reglas, permisos y pruebas: `biotex_catalog/docs/revision-productos.md`.
+La promoción de esta entrega a producción fue autorizada el 23/09/2026.
+El estado se documenta en `evidence/production-all-20260923/README.md` del proyecto BIOTECH;
+la validación local no acredita instalación remota.
+
 ## Alta de productos — 19.0.1.4.0
 
 **Nuevo** se habilita con la misma llave base completa de la sección 1. Abre el editor compartido

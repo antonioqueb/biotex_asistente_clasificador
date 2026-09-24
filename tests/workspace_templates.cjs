@@ -56,6 +56,7 @@ function applyInheritance(window, xmlSources) {
     w.eval(read(process.env.OWL_PATH));
     const templates = applyInheritance(w, [
         read(path.join(CATALOG, 'classification/classification.xml')),
+        read(path.join(CATALOG, 'classification/product_review.xml')),
         read(path.join(CATALOG, 'classification/image_gallery_dialog.xml')),
         read(path.join(CATALOG, 'classification/review_dialog.xml')),
         read(path.join(CATALOG, 'fields/class_badge.xml')),
@@ -98,9 +99,18 @@ function applyInheritance(window, xmlSources) {
     w.services = {
         orm: { call: async (model, method, args, kwargs) => {
             calls.push({ model, method, args, kwargs });
-            if (method === 'workspace_bootstrap') return { notice: '', pending_reclassify: [], tree, brands: [], uoms: [{ id: 1, name: 'Unidades' }], session: session(), drafts: [] };
+            if (method === 'workspace_bootstrap') return { notice: '', pending_reclassify: [], tree, brands: [], uoms: [{ id: 1, name: 'Unidades' }],
+                session: w.classic ? { ...session(), brand_id: 4, brand_per_line: false, can_review: true } : session(), drafts: [] };
             if (method === 'biotex_get_tree') { treeReads++; return tree; }
-            if (method === 'workspace_search_products') return { total: records.length, offset: 0, limit: 20, records };
+            if (method === 'workspace_search_products') {
+                const filtered = records.filter((r) => !kwargs.review || kwargs.review === 'all' || !!r.reviewed === (kwargs.review === 'reviewed'));
+                return { total: filtered.length, offset: 0, limit: 20, records: filtered };
+            }
+            if (model === 'product.template' && method === 'write') {
+                const record = records.find((r) => r.id === args[0][0]);
+                record.reviewed = args[1].biotex_reviewed;
+                return true;
+            }
             if (method === 'clasificador_edit_product') return { line_id: 4, session: session() };
             if (method === 'clasificador_new_product') {
                 const id = Math.max(...lines.map((l) => l.id)) + 1;
@@ -154,6 +164,7 @@ function applyInheritance(window, xmlSources) {
         class Dialog extends Component { static template = owl.xml\`<section class="o_dialog"><header><t t-slot="header"/></header><t t-slot="default"/><footer><t t-slot="footer"/></footer></section>\`; static props = { '*': true }; }
         class ConfirmationDialog extends Component { static template = owl.xml\`<div/>\`; static props = ['*']; }
         ${sources.join('\n')}
+        window.ClassicWorkspace = BiotexClassificationWorkspace;
         window.Workspace = BiotexClasificadorWorkspace; window.Editor = BiotexClasificadorLineEditorDialog;`);
     const tick = (ms = 30) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -209,6 +220,29 @@ function applyInheritance(window, xmlSources) {
     assert.ok(!calls.some((call) => call.method === 'workspace_add_products'), 'ninguna acción usa la incorporación sin edición');
     records.splice(0, records.length, ...savedRecords);
     ws.state.scan = false;
+    // Revisión independiente: estado visible para todos; escritura solo para revisores.
+    await ws.runSearch(0); await tick();
+    assert.equal(doc.querySelectorAll('[aria-label^="Marcar revisado:"]').length, 0);
+    assert.match(doc.querySelector('[data-product-id="200"]').textContent, /Completo/);
+    assert.match(doc.querySelector('[data-product-id="200"]').textContent, /Pendiente de revisar/);
+    ws.state.session.can_review = true; await tick();
+    const reviewSelect = doc.querySelector('#biotex_review_filter');
+    reviewSelect.value = 'pending';
+    reviewSelect.dispatchEvent(new w.Event('change', { bubbles: true })); await tick();
+    assert.equal(calls.at(-1).kwargs.review, 'pending');
+    doc.querySelector('[data-product-id="200"] [aria-label^="Marcar revisado:"]').click(); await tick();
+    assert.ok(!doc.querySelector('[data-product-id="200"]'), 'sale de pendientes después de guardar');
+    assert.equal(records.find((r) => r.id === 200).reviewed, true);
+    reviewSelect.value = 'reviewed';
+    reviewSelect.dispatchEvent(new w.Event('change', { bubbles: true })); await tick();
+    assert.equal(doc.querySelectorAll('.o_bac_table [data-product-id]').length, 1);
+    assert.match(doc.querySelector('[data-product-id="200"]').textContent, /Revisado/);
+    doc.querySelector('[data-product-id="200"] [aria-label^="Marcar pendiente de revisar:"]').click(); await tick();
+    assert.equal(records.find((r) => r.id === 200).reviewed, false);
+    assert.equal(doc.querySelectorAll('.o_bac_table [data-product-id]').length, 0);
+    reviewSelect.value = 'all';
+    reviewSelect.dispatchEvent(new w.Event('change', { bubbles: true })); await tick();
+    assert.equal(doc.querySelectorAll('.o_bac_table [data-product-id]').length, records.length);
     // paso 3: solo lectura, por marca y folio, con pendientes aparte
     ws.goStage(3); await tick();
     const done = [...doc.querySelectorAll('.o_bac_table_done tbody tr')].map((tr) => tr.children[3].textContent.trim());
@@ -241,6 +275,23 @@ function applyInheritance(window, xmlSources) {
     assert.deepEqual([...doc.querySelectorAll('.o_bac_table_done tbody tr')].map((tr) => tr.children[3].textContent.trim()),
         [`${base}-AAAA-01`, `${base}-AAAA-02`, `${base}-AAAA-03`, `${base}-AAAA-04`], 'reubicación por marca y folio');
     app.destroy();
+
+    // Los controles compartidos también funcionan en el Clasificador por Grupos.
+    w.classic = true;
+    const classicApp = new w.owl.App(w.ClassicWorkspace, { templates, dev: true, props: { action: { context: {} } } });
+    const classic = await classicApp.mount(w.document.body);
+    classic.goStage(2); await tick();
+    const classicFilter = doc.querySelector('#biotex_review_filter');
+    assert.ok(classicFilter);
+    doc.querySelector('[data-product-id="200"] [aria-label^="Marcar revisado:"]').click(); await tick();
+    assert.equal(records.find((r) => r.id === 200).reviewed, true);
+    classicFilter.value = 'reviewed';
+    classicFilter.dispatchEvent(new w.Event('change', { bubbles: true })); await tick();
+    assert.equal(doc.querySelectorAll('[data-product-id]').length, 1);
+    doc.querySelector('[data-product-id="200"] [aria-label^="Marcar pendiente de revisar:"]').click(); await tick();
+    assert.equal(doc.querySelectorAll('[data-product-id]').length, 0);
+    classicApp.destroy();
+    w.classic = false;
 
     // ------------------------------------------------------------ modal: marca, catálogo fresco y confirmación
     lines[3] = line(4, { suggested_brand_id: 4, suggested_brand_name: 'AAAA · Alfa' });
@@ -472,5 +523,5 @@ function applyInheritance(window, xmlSources) {
     assert.ok(newWorkspace.lines.some((l) => l.id === created.id), 'el alta guardada se conserva');
     newWorkspaceApp.destroy();
     dom.window.close();
-    console.log('Clasificador Global: OWL OK; edición, unidades, raíz, alta vacía, señales visuales, marca, guardado, sección 3 y cancelación');
+    console.log('Clasificador Global: OWL OK; revisión y filtros en ambos clasificadores, edición, unidades, raíz, alta vacía, señales visuales, marca, guardado, sección 3 y cancelación');
 })().catch((error) => { console.error(error); process.exit(1); });

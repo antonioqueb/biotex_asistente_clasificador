@@ -189,18 +189,18 @@ class ClassificationSession(models.Model):
             session.write(clean)  # si cambia la llave base, las líneas con marca se renumeran (write de la sesión)
         return session._workspace_session()
 
-    def workspace_search_products(self, query='', offset=0, limit=20):
+    def workspace_search_products(self, query='', offset=0, limit=20, review='all'):
         """Con marca por producto los productos ya agregados siguen en el resultado: el paso 2 es donde se editan."""
         self.ensure_one()
         if not self.brand_per_line:
-            return super().workspace_search_products(query=query, offset=offset, limit=limit)
+            return super().workspace_search_products(query=query, offset=offset, limit=limit, review=review)
         self.check_access('read')
         limit = max(1, min(int(limit), 20))
         offset = max(0, int(offset))
-        domain = Domain.TRUE
+        domain = self._workspace_review_domain(review)
         query = (query or '').strip()
         if query:
-            domain = (Domain('name', 'ilike', query) | Domain('default_code', 'ilike', query)
+            domain &= (Domain('name', 'ilike', query) | Domain('default_code', 'ilike', query)
                       | Domain('biotex_reference', 'ilike', query) | Domain('barcode', 'ilike', query)
                       | Domain('biotex_alt_code', 'ilike', query) | Domain('biotex_legacy_code', 'ilike', query)
                       | Domain('biotex_synonym_ids.name', 'ilike', query))
@@ -234,6 +234,7 @@ class ClassificationSession(models.Model):
             # clave completa con esta misma familia y clasificador: tercer estado visual del paso 2
             'same_classification': self._same_classification(product),
             'class_state': product.biotex_class_state or 'unclassified',
+            'reviewed': product.biotex_reviewed,
             'missing': product.biotex_missing or '',
             'images': self._clasificador_product_images(product),
             'line': line._workspace_line(moved=moved) if line else None,

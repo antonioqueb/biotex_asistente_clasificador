@@ -1,5 +1,6 @@
 """Clasificador Global: marca y folio por producto, casos A/B, paso 3 y convivencia con el asistente base."""
 import json
+from unittest import TestCase as PythonTestCase
 from unittest.mock import patch
 
 from odoo.exceptions import UserError, ValidationError
@@ -29,6 +30,28 @@ class TestClasificador(TransactionCase):
         ctx = cls.env(context={**cls.env.context, 'no_reset_password': True})
         cls.operator = new_test_user(ctx, login='clasificador_operator', groups='biotex_catalog.group_catalog_classifier')
         cls.colleague = new_test_user(ctx, login='clasificador_colleague', groups='biotex_catalog.group_catalog_classifier')
+
+    def test_global_review_filter_matches_template_and_keeps_session_products(self):
+        reviewer = new_test_user(self.env(context={**self.env.context, 'no_reset_password': True}),
+                                 login='global_review_leader', groups='biotex_catalog.group_catalog_reviewer')
+        products = self.env['product.template'].create([
+            {'name': 'Global review fixture %03d' % n} for n in range(24)
+        ])
+        products[:2].with_user(reviewer).action_mark_reviewed()
+        session = self.session()
+        session.clasificador_edit_product(products[0].id)
+        reviewed = session.workspace_search_products('Global review fixture', review='reviewed')
+        self.assertEqual(reviewed['total'], 2)
+        self.assertEqual({row['id'] for row in reviewed['records']}, set(products[:2].ids))
+        self.assertTrue(all(row['reviewed'] for row in reviewed['records']))
+        self.assertTrue(next(row for row in reviewed['records'] if row['id'] == products[0].id)['line'])
+        pending = session.workspace_search_products('Global review fixture', review='pending', offset=20)
+        self.assertEqual(pending['total'], 22)
+        self.assertEqual(len(pending['records']), 2)
+        self.assertFalse(any(row['reviewed'] for row in pending['records']))
+        self.assertEqual(session.workspace_search_products('Global review fixture')['total'], 24)
+        with self.assertRaises(UserError):
+            session.workspace_search_products(review='invalid')
 
     # ------------------------------------------------------------ helpers
     def new_line(self, session):
@@ -166,15 +189,24 @@ class TestClasificador(TransactionCase):
         reference = line.reference
         self.product(barcode='ALTA-BARCODE-OCUPADO')
         count = self.env['product.template'].search_count([])
-        for invalid in ({'new_name': ''}, {'uom_id': False}, {'base_unit_quantity': 0},
-                        {'barcode': 'ALTA-BARCODE-OCUPADO'}):
-            with self.assertRaises((UserError, ValidationError)):
-                session.clasificador_create_product(line.id, {**self.new_values(), **invalid})
-            self.assertFalse(line.product_id)
-        with patch.object(type(self.env['product.template']), '_biotex_set_presentations',
-                          side_effect=UserError('Empaque inválido')):
-            with self.assertRaisesRegex(UserError, 'Empaque inválido'):
-                session.clasificador_create_product(line.id, self.new_values())
+        for invalid, error in (({'new_name': ''}, UserError), ({'uom_id': False}, UserError),
+                               ({'base_unit_quantity': 0}, ValidationError),
+                               ({'barcode': 'ALTA-BARCODE-OCUPADO'}, UserError)):
+            with self.subTest(invalid=invalid):
+                # Odoo 19's assertRaises requires one exception class.
+                with self.assertRaises(error):
+                    session.clasificador_create_product(line.id, {**self.new_values(), **invalid})
+                self.assertFalse(line.product_id)
+                self.assertEqual(self.env['product.template'].search_count([]), count)
+        # A nonempty payload reaches packaging validation after the product is
+        # created and linked. Omitted presentations never call that validation.
+        invalid_packaging = self.new_values(presentation_data=[{
+            'name': 'CAJA DE PRUEBA', 'quantity': 0, 'barcode': '',
+        }])
+        # Avoid Odoo's assertion savepoint: the method itself must roll back the
+        # product and draft changes, or the following assertions must fail.
+        with PythonTestCase.assertRaisesRegex(self, ValidationError, 'cantidad entera'):
+            session.clasificador_create_product(line.id, invalid_packaging)
         self.assertFalse(line.product_id)
         self.assertFalse(line.new_name, 'el savepoint revierte también los datos del borrador')
         self.assertEqual(line.reference, reference, 'se conserva la reserva realizada antes del intento')

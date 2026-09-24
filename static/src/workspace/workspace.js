@@ -159,7 +159,9 @@ export class BiotexClasificadorWorkspace extends BiotexClassificationWorkspace {
         const query = this.state.search.query;
         this.state.search.loading = true;
         try {
-            const res = await this.orm.call(MODEL, "workspace_search_products", [[sessionId]], { query, offset, limit: PAGE_SIZE });
+            const res = await this.orm.call(MODEL, "workspace_search_products", [[sessionId]], {
+                query, offset, limit: PAGE_SIZE, review: this.state.search.review || "all",
+            });
             if (this.destroyed || version !== this.searchVersion || sessionId !== this.state.session?.id) return false;
             const records = res.records;
             Object.assign(this.state.search, { records, total: res.total, offset: res.offset,

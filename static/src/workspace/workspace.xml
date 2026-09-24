@@ -190,6 +190,7 @@
                             </button>
                         </div>
 
+                        <t t-call="biotex_catalog.ReviewFilter"/>
                         <p id="bac_search_help" class="o_bcw_hint mb-2">
                             Flechas para seleccionar; Enter para editar. Los productos de esta sesión siguen en la lista con su código
                             <span class="o_bac_code_pending" t-esc="pendingCode"/> hasta que confirmes su marca desde Editar.
@@ -211,6 +212,7 @@
                                         <td class="o_bcw_cell_name o_bac_cell_name">
                                             <!-- renglón 1: nombre; renglón 2: badges. Así la fila no se satura en una sola línea. -->
                                             <div class="o_bac_name" t-esc="line ? (line.new_name || record.name) : record.name"/>
+                                            <t t-call="biotex_catalog.ProductReview"/>
                                             <div class="o_bac_badges">
                                                 <BiotexClassBadge record="badgeRecord(record)" name="'biotex_class_state'" readonly="true"/>
                                                 <span t-if="record.locked_by" class="o_bcw_badge o_bcw_badge_warn" t-att-title="'En clasificación en curso: ' + record.locked_by">En clasificación</span>
