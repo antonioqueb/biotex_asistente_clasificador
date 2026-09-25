@@ -1,7 +1,7 @@
 {
     'name': 'Clasificador Global',
-    'summary': 'Variante del asistente de clasificación masiva: marca y folio por producto, clasificación desde el paso 2, paso 3 ordenado por marca y folio con edición por fila, regla de raíz al guardar y tabla unificada de unidades y empaques',
-    'version': '19.0.1.5.0',
+    'summary': 'Variante del asistente de clasificación masiva: marca y folio por producto; el paso 2 agrega, el paso 3 edita (marca, folio, fotos) con pendientes primero y clasificados por marca y folio; al guardar y salir o generar claves se liberan los productos sin marca ni folio; regla de raíz al guardar y tabla unificada de unidades y empaques',
+    'version': '19.0.1.6.0',
     'description': 'Clasificador Global: la sesión fija grupo, familia y clasificador; la marca y el folio se asignan por producto al confirmar la marca. Convive con el Clasificador por Grupos de biotex_catalog.',
     'category': 'Distribución de insumos',
     'author': 'Alphaqueb Consulting SAS',

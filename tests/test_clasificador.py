@@ -557,6 +557,43 @@ class TestClasificador(TransactionCase):
         self.assertEqual(len(note), 1)
         self.assertIn('CLBA', self.line(session, p1).applied_classification_after)
 
+    def test_release_pending_frees_products_and_keeps_classified_lines(self):
+        session = self.session()
+        with_brand, pending, already = self.product(name='CON MARCA'), self.product(name='SIN MARCA'), self.classified_product(self.prefix_a + '-07', name='YA CLASIFICADO')
+        session.workspace_add_products((with_brand | pending | already).ids)
+        session.clasificador_set_line_brand(self.line(session, with_brand).id, self.brand_a.id)
+        session.workspace_update_line(self.line(session, pending).id, {'new_name': 'NOMBRE CAPTURADO SIN MARCA'})
+        self.assertEqual(pending.biotex_classification_status, 'classifying')
+        self.assertEqual(session.pending_count, 2)
+        data = session.clasificador_release_pending()
+        self.assertEqual(sorted(data['released']), ['SIN MARCA', 'YA CLASIFICADO'])
+        self.assertEqual(session.line_ids.product_id, with_brand, 'solo se conservan las líneas con marca y folio')
+        self.assertEqual(session.pending_count, 0)
+        self.assertEqual(data['pending_count'], 0)
+        # los liberados vuelven al catálogo tal como estaban: sin sesión, sin cambios de nombre ni de clave
+        self.assertFalse(pending.biotex_classification_session_id)
+        self.assertFalse(pending.biotex_classification_status)
+        self.assertEqual(pending.name, 'SIN MARCA')
+        self.assertFalse(pending.default_code)
+        self.assertEqual(already.default_code, self.prefix_a + '-07')
+        self.assertEqual(already.biotex_brand_id, self.brand_a)
+        self.assertEqual(self.line(session, with_brand).reference, self.prefix_a + '-01', 'el folio de la línea conservada no cambia')
+        # sin pendientes no hace nada y devuelve la sesión
+        self.assertEqual(session.clasificador_release_pending()['released'], [])
+        # un producto liberado puede agregarse de nuevo, en esta u otra sesión
+        colleague = self.session(self.colleague)
+        self.assertNotIn('skipped', colleague.workspace_add_products(pending.ids))
+        self.confirm(session)
+        self.assertEqual(session.state, 'confirmed')
+        self.assertEqual(with_brand.default_code, self.prefix_a + '-01')
+        self.assertFalse(pending.default_code, 'lo liberado no recibe clave')
+        with self.assertRaises(UserError):
+            session.clasificador_release_pending()  # sesión confirmada: ya no es editable
+        classic = self.env['biotex.classification.session'].with_user(self.operator).create({
+            'group_id': self.group.id, 'family_id': self.family.id, 'classifier_id': self.classifier.id, 'brand_id': self.brand_a.id})
+        with self.assertRaises(UserError):
+            classic.clasificador_release_pending()
+
     def test_step3_lists_only_classified_lines_ordered_by_brand_then_folio(self):
         session = self.session()
         pa1, pb1, pa2, pending = (self.product(name='A UNO'), self.product(name='B UNO'), self.product(name='A DOS'), self.product(name='PENDIENTE'))

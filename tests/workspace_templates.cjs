@@ -339,8 +339,9 @@ function applyInheritance(window, xmlSources) {
     lines.push(releasedLine);
     ws.applySession(session()); await tick();
     doc.querySelector('.o_bac_table_done tbody .o_bac_remove3').click(); await tick();
-    assert.equal(calls.at(-1).method, 'workspace_remove_line');
-    assert.equal(calls.at(-1).kwargs.line_id, 4);
+    const removal = calls.findLast((call) => call.method === 'workspace_remove_line');
+    assert.ok(removal, 'Quitar llama a workspace_remove_line');
+    assert.equal(removal.kwargs.line_id, 4);
     assert.ok(!lines.includes(releasedLine), 'Quitar libera el pendiente');
     lines.push(releasedLine);
     ws.applySession(session()); await tick();
