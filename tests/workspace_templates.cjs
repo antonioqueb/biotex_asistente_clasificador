@@ -1,5 +1,6 @@
 /* Verificación local sin Odoo: compila las plantillas OWL del asistente y del modal, monta ambos
- * componentes con servicios simulados y comprueba el comportamiento del paso 2 y del paso 3.
+ * componentes con servicios simulados y comprueba el comportamiento del paso 2 (Agregar), del paso 3 (Editar / Quitar)
+ * y la liberación de pendientes al guardar y salir o generar claves.
  *
  * Uso: NODE_PATH=<dir con jsdom> OWL_PATH=<owl.js de Odoo 19> node tests/workspace_templates.cjs
  * La herencia `t-inherit` (que en Odoo resuelve el cliente web) se aplica aquí con una versión mínima
@@ -112,6 +113,25 @@ function applyInheritance(window, xmlSources) {
                 return true;
             }
             if (method === 'clasificador_edit_product') return { line_id: 4, session: session() };
+            if (method === 'workspace_add_products') {
+                for (const productId of kwargs.product_ids) {
+                    if (lines.some((l) => l.product_id === productId)) continue;
+                    const record = records.find((r) => r.id === productId);
+                    lines.push(line(productId - 100, { product_id: productId, old_name: record.name, new_name: record.name, suggested_brand_id: record.brand_id }));
+                }
+                return session();
+            }
+            if (method === 'workspace_remove_line') {
+                const index = lines.findIndex((l) => l.id === kwargs.line_id);
+                if (index !== -1) lines.splice(index, 1);
+                return session();
+            }
+            if (method === 'clasificador_release_pending') {
+                const released = lines.filter((l) => !l.classified || l.is_new_product).map((l) => l.new_name || l.old_name || 'Nuevo producto');
+                for (let i = lines.length - 1; i >= 0; i--) if (!lines[i].classified || lines[i].is_new_product) lines.splice(i, 1);
+                return { ...session(), released };
+            }
+            if (method === 'workspace_confirmation_preview') return { revision: 'r1', count: lines.length, changes: [], kept_uoms: [] };
             if (method === 'clasificador_new_product') {
                 const id = Math.max(...lines.map((l) => l.id)) + 1;
                 lines.push(line(id, { product_id: false, old_name: '', new_name: '', uom_id: false,
@@ -175,7 +195,8 @@ function applyInheritance(window, xmlSources) {
     const doc = w.document;
     assert.equal(calls[0].method, 'workspace_bootstrap');
     assert.equal(calls[0].kwargs.context.clasificador, true, 'el bootstrap se pide con el contexto del clasificador');
-    assert.equal(ws.state.stage, 2, 'con productos pendientes se abre el paso 2');
+    assert.equal(ws.state.stage, 3, 'con productos en la sesión se abre el paso 3 (ahí se editan)');
+    ws.goStage(2); await tick();
     // paso 1: tres niveles, sin marca, con llave pendiente
     ws.toggleCollapse(1); await tick();
     assert.equal(doc.querySelectorAll('.o_bac_levels .o_bcw_pick').length, 3, 'grupo, familia y clasificador');
@@ -199,25 +220,42 @@ function applyInheritance(window, xmlSources) {
     assert.ok(rows[3].classList.contains('o_bcw_row_reclassified'));
     assert.match(rows[4].textContent, /En clasificación/);
     assert.ok(!doc.querySelector('.o_bac_table .fa-trash-o, .o_bac_table .o_bcw_danger'), 'ninguna acción de eliminar en el paso 2');
-    assert.ok(rows[1].querySelector('.o_bac_edit') && rows[2].querySelector('.o_bac_edit') && !rows[4].querySelector('.o_bac_edit'), 'Editar salvo en otra sesión');
-    assert.equal(doc.querySelectorAll('.o_bac_table .o_bcw_add').length, 0, 'no hay Agregar en ningún resultado');
-    for (const row of rows.slice(0, 4)) {
-        assert.equal(row.querySelectorAll('.o_bac_actions button').length, 1, 'Editar es la única acción por producto');
-        assert.match(row.querySelector('.o_bac_actions button').textContent, /Editar/);
+    assert.equal(doc.querySelectorAll('.o_bac_table .o_bac_edit').length, 0, 'ya no hay Editar en el paso 2');
+    assert.ok(rows[2].querySelector('.o_bcw_add') && rows[3].querySelector('.o_bcw_add') && !rows[4].querySelector('.o_bcw_add'), 'Agregar salvo en otra sesión');
+    assert.ok(!rows[0].querySelector('.o_bcw_add') && !rows[1].querySelector('.o_bcw_add'), 'un producto ya en la sesión no se vuelve a agregar');
+    assert.match(rows[0].querySelector('.o_bac_added').textContent, /Agregado/);
+    assert.match(rows[1].querySelector('.o_bac_added').textContent, /Agregado/);
+    for (const row of rows.slice(2, 4)) {
+        assert.equal(row.querySelectorAll('.o_bac_actions button').length, 1, 'Agregar es la única acción por producto');
+        assert.match(row.querySelector('.o_bac_actions button').textContent, /Agregar/);
     }
-    rows[3].querySelector('.o_bac_edit').click(); await tick();
-    assert.equal(w.dialogs.at(-1).component.name, 'ConfirmationDialog', 'editar un producto de otra clasificación pide aceptar');
-    rows[2].querySelector('.o_bac_edit').click(); await tick();
-    assert.equal(calls.at(-1).method, 'clasificador_edit_product', 'Editar sin +Agregar agrega la línea');
-    assert.equal(w.dialogs.at(-1).component.name, 'BiotexClasificadorLineEditorDialog');
-    ws.state.search.selectedId = 200;
+    rows[3].querySelector('.o_bcw_add').click(); await tick();
+    assert.equal(w.dialogs.at(-1).component.name, 'ConfirmationDialog', 'agregar un producto de otra clasificación pide aceptar');
+    const dialogsBeforeAdd = w.dialogs.length;
+    rows[2].querySelector('.o_bcw_add').click(); await tick();
+    assert.equal(calls.filter((call) => call.method === 'workspace_add_products').length, 1, 'Agregar incorpora la línea sin abrir el modal');
+    assert.equal(JSON.stringify([...calls.findLast((call) => call.method === 'workspace_add_products').kwargs.product_ids]), '[200]');
+    assert.equal(w.dialogs.length, dialogsBeforeAdd, 'Agregar no abre el editor');
+    assert.ok(lines.some((l) => l.product_id === 200), 'la línea existe en la sesión');
+    assert.match(w.notifications.at(-1), /agregado al paso 3/);
+    assert.match(doc.querySelector('[data-product-id="200"] .o_bac_added').textContent, /Agregado/, 'el resultado pasa a Agregado');
+    ws.state.search.selectedId = 201;
     await ws.onSearchKeydown({ key: 'Enter', preventDefault() {} }); await tick();
-    assert.equal(calls.at(-1).method, 'clasificador_edit_product', 'Enter abre Editar');
-    const savedRecords = records.splice(0, records.length, records[2]);
+    assert.equal(w.dialogs.at(-1).component.name, 'ConfirmationDialog', 'Enter agrega (con el mismo aviso de otra clasificación)');
+    ws.state.search.selectedId = 200;
+    const addsBefore = calls.filter((call) => call.method === 'workspace_add_products').length;
+    await ws.onSearchKeydown({ key: 'Enter', preventDefault() {} }); await tick();
+    assert.equal(calls.filter((call) => call.method === 'workspace_add_products').length, addsBefore, 'Enter sobre un producto ya agregado no lo duplica');
+    assert.match(w.notifications.at(-1), /ya está en la sesión/);
+    const savedRecords = records.splice(0, records.length, records[3]);
     ws.state.scan = true;
     await ws.onSearchKeydown({ key: 'Enter', preventDefault() {} }); await tick();
-    assert.equal(calls.at(-1).method, 'clasificador_edit_product', 'el lector también abre Editar');
-    assert.ok(!calls.some((call) => call.method === 'workspace_add_products'), 'ninguna acción usa la incorporación sin edición');
+    assert.equal(w.dialogs.at(-1).component.name, 'ConfirmationDialog', 'el lector también agrega: pide aceptar la otra clasificación');
+    await w.dialogs.at(-1).props.confirm(); await tick();
+    assert.ok(lines.some((l) => l.product_id === 201), 'al aceptar se agrega');
+    assert.ok(!calls.some((call) => call.method === 'clasificador_edit_product'), 'ninguna acción del paso 2 abre la edición');
+    // se dejan solo las líneas del escenario original para el resto de la prueba
+    for (let i = lines.length - 1; i >= 0; i--) if ([200, 201].includes(lines[i].product_id)) lines.splice(i, 1);
     records.splice(0, records.length, ...savedRecords);
     ws.state.scan = false;
     // Revisión independiente: estado visible para todos; escritura solo para revisores.
@@ -243,29 +281,78 @@ function applyInheritance(window, xmlSources) {
     reviewSelect.value = 'all';
     reviewSelect.dispatchEvent(new w.Event('change', { bubbles: true })); await tick();
     assert.equal(doc.querySelectorAll('.o_bac_table [data-product-id]').length, records.length);
-    // paso 3: solo lectura, por marca y folio, con pendientes aparte
+    // paso 3: todos los productos de la sesión; pendientes primero, luego por marca y folio; Editar y Quitar
+    ws.applySession(session());
     ws.goStage(3); await tick();
     const done = [...doc.querySelectorAll('.o_bac_table_done tbody tr')].map((tr) => tr.children[3].textContent.trim());
-    assert.deepEqual(done, [`${base}-AAAA-01`, `${base}-AAAA-02`, `${base}-ZZZZ-01`], 'orden por marca y folio');
-    assert.ok(!doc.querySelector('.o_bac_table_done input, .o_bac_table_done select, .o_bac_table_done .o_bcw_grip, .o_bac_table_done .fa-trash-o'), 'sin edición en línea, borrado ni arrastre');
-    // cambio 1: columna Acciones con el lápiz (mismo modal que el paso 2, precargado con la línea de la fila)
+    assert.deepEqual(done, [`${base}-????-??`, `${base}-AAAA-01`, `${base}-AAAA-02`, `${base}-ZZZZ-01`], 'pendiente primero, después por marca y folio');
+    assert.ok(doc.querySelector('.o_bac_table_done tbody tr').classList.contains('o_bac_row_pending'));
+    assert.match(doc.querySelector('.o_bac_table_done tbody tr').textContent, /Pendiente/);
+    assert.ok(!doc.querySelector('.o_bac_table_done input, .o_bac_table_done select, .o_bac_table_done .o_bcw_grip'), 'sin edición en línea ni arrastre');
     assert.match(doc.querySelector('.o_bac_table_done thead').textContent, /Acciones/);
     const pencils = doc.querySelectorAll('.o_bac_table_done tbody .o_bac_edit3 .fa-pencil');
-    assert.equal(pencils.length, 3, 'un lápiz por producto clasificado');
+    assert.equal(pencils.length, 4, 'un lápiz por producto de la sesión, también los pendientes');
+    assert.equal(doc.querySelectorAll('.o_bac_table_done tbody .o_bac_remove3').length, 1, 'Quitar solo en los pendientes');
     const dialogsBefore = w.dialogs.length;
-    doc.querySelectorAll('.o_bac_table_done tbody .o_bac_edit3')[1].click(); await tick();
+    doc.querySelectorAll('.o_bac_table_done tbody .o_bac_edit3')[2].click(); await tick();
     assert.equal(w.dialogs.length, dialogsBefore + 1);
     assert.equal(w.dialogs.at(-1).component.name, 'BiotexClasificadorLineEditorDialog', 'el lápiz del paso 3 abre el modal de edición');
     assert.equal(w.dialogs.at(-1).props.lineId, 2, 'precargado con la línea de la fila (AAAA-02)');
     assert.equal(w.dialogs.at(-1).props.classCode, `${base}-AAAA-02`);
-    assert.match(doc.querySelector('.o_bac_pending').textContent, /1 producto\(s\) sin marca/);
+    doc.querySelectorAll('.o_bac_table_done tbody .o_bac_edit3')[0].click(); await tick();
+    assert.equal(w.dialogs.at(-1).props.lineId, 4, 'el lápiz de un pendiente abre el mismo modal');
+    assert.equal(w.dialogs.at(-1).props.classCode, `${base}-????-??`);
+    assert.match(doc.querySelector('.o_bac_pending').textContent, /1 producto\(s\) sin marca ni folio/);
+    assert.match(doc.querySelector('.o_bac_pending').textContent, /se liberan de la sesión/);
     assert.match(doc.querySelector('.o_bcw_stage3_meta [role="status"]').textContent, /Clasificados:\s*3\s*· Marcas:\s*2\s*·\s*Sin marca:\s*1/);
-    assert.equal(doc.querySelector('.o_bcw_foot .btn-primary').disabled, true, 'Generar claves bloqueado con pendientes');
+    assert.equal(doc.querySelector('.o_bcw_foot .btn-primary').disabled, false, 'Generar claves disponible con pendientes: se liberan al confirmar');
+    // generar claves con pendientes: diálogo de liberación; al aceptar se liberan y sigue la revisión
+    ws.confirm(); await tick();
+    assert.equal(w.dialogs.at(-1).component.name, 'ConfirmationDialog', 'con pendientes pide confirmar la liberación');
+    assert.match(w.dialogs.at(-1).props.body, /1 producto\(s\) no tienen marca ni folio/);
+    assert.match(w.dialogs.at(-1).props.body, /PRODUCTO 4/);
+    assert.match(w.dialogs.at(-1).props.confirmLabel, /Liberar y generar claves/);
+    const releasedLine = lines[3];
+    await w.dialogs.at(-1).props.confirm(); await tick();
+    assert.equal(calls.filter((call) => call.method === 'clasificador_release_pending').length, 1);
+    assert.ok(!lines.includes(releasedLine), 'la línea pendiente se libera');
+    assert.match(w.notifications.at(-1), /Se liberaron 1 producto/);
+    assert.equal(calls.at(-1).method, 'workspace_confirmation_preview', 'tras liberar continúa la revisión previa a generar claves');
+    assert.equal(w.dialogs.at(-1).component.name, 'BiotexClassificationReviewDialog');
+    assert.equal(doc.querySelectorAll('.o_bac_table_done tbody tr').length, 3);
+    assert.ok(!doc.querySelector('.o_bac_pending'));
+    // guardar y salir con pendientes: mismo diálogo; al aceptar libera y sale
+    lines.push(releasedLine);
+    ws.applySession(session()); await tick();
+    let exited = 0;
+    w.services.action.doAction = () => { exited++; };
+    await ws.saveAndExit(); await tick();
+    assert.equal(exited, 0, 'con pendientes no sale sin confirmar');
+    assert.match(w.dialogs.at(-1).props.confirmLabel, /Liberar y salir/);
+    await w.dialogs.at(-1).props.confirm(); await tick();
+    assert.equal(calls.filter((call) => call.method === 'clasificador_release_pending').length, 2);
+    assert.equal(exited, 1, 'tras liberar sale a la lista de sesiones');
+    assert.ok(!lines.includes(releasedLine));
+    await ws.saveAndExit(); await tick();
+    assert.equal(exited, 2, 'sin pendientes sale directo');
+    // quitar un pendiente desde el paso 3
+    lines.push(releasedLine);
+    ws.applySession(session()); await tick();
+    doc.querySelector('.o_bac_table_done tbody .o_bac_remove3').click(); await tick();
+    assert.equal(calls.at(-1).method, 'workspace_remove_line');
+    assert.equal(calls.at(-1).kwargs.line_id, 4);
+    assert.ok(!lines.includes(releasedLine), 'Quitar libera el pendiente');
+    lines.push(releasedLine);
+    ws.applySession(session()); await tick();
+    w.dialogs.push(w.dialogs.find((d) => d.component.name === 'BiotexClasificadorLineEditorDialog' && d.props.lineId === 2));
     // refresco en vivo: una edición devuelve la sesión y el paso 3 se reubica solo
     lines[3] = { ...lines[3], brand_id: 4, brand_code: 'AAAA', brand_short: 'Alfa', consecutive: 3, reference: `${base}-AAAA-03`, display_code: `${base}-AAAA-03`, folio: '03', folio_number: 3, classified: true };
     w.dialogs.at(-1).props.onSaved(session()); await tick();
-    assert.equal(doc.querySelectorAll('.o_bac_table_done tbody tr').length, 4, 'la línea recién clasificada se inserta');
+    assert.equal(doc.querySelectorAll('.o_bac_table_done tbody tr').length, 4, 'la línea recién clasificada se reubica');
+    assert.deepEqual([...doc.querySelectorAll('.o_bac_table_done tbody tr')].map((tr) => tr.children[3].textContent.trim()),
+        [`${base}-AAAA-01`, `${base}-AAAA-02`, `${base}-AAAA-03`, `${base}-ZZZZ-01`], 'sin pendientes: todo por marca y folio');
     assert.ok(!doc.querySelector('.o_bac_pending'));
+    assert.equal(doc.querySelectorAll('.o_bac_table_done tbody .o_bac_remove3').length, 0, 'sin pendientes no hay Quitar');
     assert.match(doc.querySelector('.o_bcw_stage3_meta [role="status"]').textContent, /Clasificados:\s*4\s*· Marcas:\s*2/);
     assert.doesNotMatch(doc.querySelector('.o_bcw_stage3_meta [role="status"]').textContent, /Sin marca/);
     assert.equal(doc.querySelector('.o_bcw_foot .btn-primary').disabled, false);

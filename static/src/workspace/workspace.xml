@@ -38,7 +38,7 @@
                     <span class="o_bcw_num o_bcw_tone_group">1</span>
                     <div class="o_bcw_stage_titles">
                         <h2>Selecciona clasificación</h2>
-                        <p>Grupo, familia y clasificador. La marca se asigna a cada producto al editarlo.</p>
+                        <p>Grupo, familia y clasificador. La marca se asigna a cada producto al editarlo en el paso 3.</p>
                     </div>
                     <div class="o_bcw_stage_mini" t-if="state.collapsed[1] and classificationComplete">
                         <span class="o_bcw_code o_bcw_code_sm">
@@ -139,7 +139,7 @@
                             <div class="o_bcw_summary_row o_bcw_tone_brand">
                                 <span class="o_bcw_dot"/>
                                 <span class="o_bcw_summary_label">Marca:</span>
-                                <span class="o_bcw_summary_value o_bcw_muted">por producto, al editarlo</span>
+                                <span class="o_bcw_summary_value o_bcw_muted">por producto, al editarlo en el paso 3</span>
                             </div>
                         </div>
                         <p t-if="classificationComplete" class="o_bcw_hint">
@@ -155,8 +155,8 @@
                 <header class="o_bcw_stage_head o_bac_search_head" t-on-click="() => this.goStage(2)">
                     <span class="o_bcw_num o_bcw_tone_brand">2</span>
                     <div class="o_bcw_stage_titles">
-                        <h2>Busca, edita y clasifica productos</h2>
-                        <p>Edita cada producto para asignarle marca y reservar su folio. Ver imágenes abre su galería.</p>
+                        <h2>Busca y agrega productos</h2>
+                        <p>Agrega productos a la sesión. La marca, el folio, las fotos y demás datos se capturan al editarlos en el paso 3.</p>
                     </div>
                     <button type="button" class="btn btn-sm o_bac_new_product" t-att-disabled="!canCreateProduct"
                             title="Crear un producto con la llave base seleccionada" t-on-click.stop="newProduct">
@@ -185,15 +185,15 @@
                                    t-on-input="onSearchInput" t-on-keydown="onSearchKeydown"/>
                             <button class="o_bcw_scan" t-att-class="{o_bcw_scan_on: state.scan}" t-on-click="toggleScan"
                                     t-att-aria-pressed="state.scan ? 'true' : 'false'" aria-label="Modo lector de código de barras"
-                                    title="Lector de código de barras: un resultado único abre la edición.">
+                                    title="Lector de código de barras: al leer un código con un resultado único, se agrega solo.">
                                 <i class="fa fa-barcode"/>
                             </button>
                         </div>
 
                         <t t-call="biotex_catalog.ReviewFilter"/>
                         <p id="bac_search_help" class="o_bcw_hint mb-2">
-                            Flechas para seleccionar; Enter para editar. Los productos de esta sesión siguen en la lista con su código
-                            <span class="o_bac_code_pending" t-esc="pendingCode"/> hasta que confirmes su marca desde Editar.
+                            Flechas para seleccionar; Enter para agregar. Los productos agregados se editan en el paso 3 y siguen en esta lista con su código
+                            <span class="o_bac_code_pending" t-esc="pendingCode"/> hasta que confirmes su marca.
                         </p>
                         <div class="o_bcw_table_wrap" t-ref="searchResults" role="region" aria-label="Resultados de búsqueda" tabindex="0" t-att-aria-busy="state.search.loading ? 'true' : 'false'">
                             <table class="o_list_table table-sm o_bcw_table o_bac_table">
@@ -221,7 +221,7 @@
                                                 <span t-if="record.same_classification and !record.reclassify_from and !record.locked_by" class="o_bcw_badge o_bac_badge_info"
                                                       t-att-title="'Ya tiene clave con esta familia y clasificador: ' + record.default_code + '. Con la misma marca conserva su referencia.'">Ya en esta clasificación</span>
                                                 <span t-if="line" class="o_bcw_badge" t-att-class="{o_bac_badge_done: line.classified, o_bac_badge_pending: !line.classified}"
-                                                      t-att-title="line.classified ? 'Marca y folio asignados' : 'En esta sesión, sin marca: edítalo para asignarla'">
+                                                      t-att-title="line.classified ? 'Marca y folio asignados' : 'En esta sesión, sin marca: edítalo en el paso 3 para asignarla'">
                                                     <i t-att-class="line.classified ? 'fa fa-check' : 'fa fa-clock-o'" aria-hidden="true"/>
                                                     <t t-esc="line.classified ? 'Clasificado' : 'Marca pendiente'"/>
                                                 </span>
@@ -241,12 +241,15 @@
                                         </td>
                                         <td class="o_bac_w_act">
                                             <div class="o_bac_actions">
-                                                <button t-if="!record.locked_by" type="button" class="o_bcw_icon_btn o_bac_edit" t-att-disabled="confirmed or state.busy or state.search.loading"
-                                                        t-att-title="line ? 'Editar y asignar marca' : 'Editar: agrega el producto a la sesión y permite asignar la marca'"
-                                                        t-att-aria-label="'Editar ' + record.name" t-on-click="() => this.editProduct(record)">
-                                                    <i class="fa fa-pencil" aria-hidden="true"/> Editar
+                                                <span t-if="line" class="o_bcw_hint o_bac_added" title="Ya está en la sesión: edítalo en el paso 3">
+                                                    <i class="fa fa-check" aria-hidden="true"/> Agregado
+                                                </span>
+                                                <button t-elif="!record.locked_by" type="button" class="o_bcw_add" t-att-disabled="confirmed or state.busy or state.search.loading"
+                                                        title="Agregar a la sesión: la marca y el folio se asignan al editarlo en el paso 3"
+                                                        t-att-aria-label="'Agregar ' + record.name" t-on-click="() => this.addProduct(record)">
+                                                    <i class="fa fa-plus" aria-hidden="true"/> Agregar
                                                 </button>
-                                                <span t-if="record.locked_by" class="o_bcw_hint" t-att-title="record.locked_by">En otra sesión</span>
+                                                <span t-else="" class="o_bcw_hint" t-att-title="record.locked_by">En otra sesión</span>
                                             </div>
                                         </td>
                                     </tr>
@@ -278,8 +281,8 @@
                 <header class="o_bcw_stage_head" t-on-click="() => this.goStage(3)">
                     <span class="o_bcw_num o_bcw_tone_classifier">3</span>
                     <div class="o_bcw_stage_titles">
-                        <h2>Productos clasificados de la sesión</h2>
-                        <p>Marca y folio ya asignados, ordenados por marca y folio consecutivo. Se actualiza con cada edición; el lápiz abre el producto para editarlo.</p>
+                        <h2>Edita y clasifica los productos de la sesión</h2>
+                        <p>El lápiz abre cada producto para confirmar su marca (reserva el folio), subir fotos y completar sus datos. Los pendientes van primero; los clasificados, por marca y folio.</p>
                     </div>
                     <div class="o_bcw_stage3_meta" t-if="classificationComplete">
                         <div class="o_bcw_meta_line">
@@ -309,11 +312,10 @@
                         <button class="btn btn-sm btn-primary" t-on-click="startNew">Nueva clasificación</button>
                     </div>
 
-                    <div t-if="!lines.length" class="o_bcw_empty">Todavía no hay productos en esta sesión. Agrégalos o edítalos desde el paso 2.</div>
+                    <div t-if="!lines.length" class="o_bcw_empty">Todavía no hay productos en esta sesión. Agrégalos desde el paso 2.</div>
 
                     <t t-else="">
-                        <div t-if="!classifiedLines.length" class="o_bcw_empty">Ningún producto tiene marca y folio todavía. Asigna la marca desde Editar en el paso 2.</div>
-                        <div t-else="" class="o_bcw_table_wrap" role="region" aria-label="Productos clasificados" tabindex="0">
+                        <div class="o_bcw_table_wrap" role="region" aria-label="Productos de la sesión" tabindex="0">
                             <table class="o_list_table table-sm o_bcw_table o_bcw_table_lines o_bac_table_done">
                                 <thead>
                                     <tr>
@@ -327,18 +329,20 @@
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <tr t-foreach="classifiedLines" t-as="line" t-key="line.id"
-                                        t-att-class="{o_bcw_row_reclassified: line.reclassified or line.reclassify_from}">
+                                    <tr t-foreach="stepLines" t-as="line" t-key="line.id"
+                                        t-att-class="{o_bcw_row_reclassified: line.reclassified or line.reclassify_from, o_bac_row_pending: !line.classified or line.is_new_product}">
                                         <td>
-                                            <span class="o_bcw_mono o_bac_brand_code" t-esc="line.brand_code"/> <t t-esc="line.brand_short"/>
+                                            <t t-if="line.brand_id"><span class="o_bcw_mono o_bac_brand_code" t-esc="line.brand_code"/> <t t-esc="line.brand_short"/></t>
+                                            <span t-else="" class="o_bcw_badge o_bac_badge_pending" title="Sin marca: edítalo para asignarla y reservar su folio"><i class="fa fa-clock-o" aria-hidden="true"/> Pendiente</span>
                                         </td>
-                                        <td class="o_bcw_mono o_bcw_ref" t-esc="line.folio"/>
+                                        <td class="o_bcw_mono o_bcw_ref" t-esc="line.folio or '—'"/>
                                         <td>
-                                            <t t-esc="line.new_name or line.old_name"/>
+                                            <t t-esc="line.new_name or line.old_name or 'Nuevo producto'"/>
+                                            <span t-if="line.is_new_product" class="o_bcw_badge o_bac_new_badge">NUEVO</span>
                                             <small t-if="line.old_name and line.new_name and line.old_name !== line.new_name" class="o_bcw_muted d-block">antes: <t t-esc="line.old_name"/></small>
                                         </td>
-                                        <td class="o_bcw_mono o_bcw_ref">
-                                            <t t-esc="line.reference"/>
+                                        <td class="o_bcw_mono">
+                                            <span t-att-class="line.classified ? 'o_bcw_ref' : 'o_bac_code_pending'" t-esc="line.display_code"/>
                                             <i t-if="line.preserve_reference" class="fa fa-lock o_bcw_lock" aria-hidden="true" title="Clave conservada: el producto ya estaba clasificado con esta marca"/>
                                             <i t-if="line.reclassify_from or line.reclassified" class="fa fa-exclamation-circle o_bcw_reclass" aria-hidden="true"
                                                t-att-title="line.reclassified ? 'Cambió de clasificación: antes ' + (line.old_reference || '—') : 'Ya clasificado con la clave ' + line.reclassify_from + '. Al generar claves recibirá esta nueva.'"/>
@@ -356,37 +360,36 @@
                                             </span>
                                         </td>
                                         <td class="o_bac_w_act3">
-                                            <!-- mismo modal que en el paso 2 (editLine): al retomar una sesión el paso 3 sigue siendo editable -->
-                                            <button type="button" class="o_bcw_icon_btn o_bac_edit3" t-att-disabled="confirmed or state.busy"
-                                                    t-att-title="confirmed ? 'Sesión aplicada: solo consulta' : 'Editar producto'"
-                                                    t-att-aria-label="'Editar ' + (line.new_name || line.old_name)" t-on-click="() => this.editLine(line)">
-                                                <i class="fa fa-pencil" aria-hidden="true"/>
-                                            </button>
+                                            <div class="o_bac_actions">
+                                                <!-- el mismo modal en todos los casos (editLine): también al retomar una sesión sin terminar -->
+                                                <button type="button" class="o_bcw_icon_btn o_bac_edit3" t-att-disabled="confirmed or state.busy"
+                                                        t-att-title="confirmed ? 'Sesión aplicada: solo consulta' : (line.is_new_product ? 'Continuar alta' : (line.classified ? 'Editar producto' : 'Editar: asignar marca, reservar folio y completar datos'))"
+                                                        t-att-aria-label="'Editar ' + (line.new_name || line.old_name || 'Nuevo producto')" t-on-click="() => this.editLine(line)">
+                                                    <i class="fa fa-pencil" aria-hidden="true"/> Editar
+                                                </button>
+                                                <button t-if="!line.classified or line.is_new_product" type="button" class="o_bcw_icon_btn o_bcw_danger o_bac_remove3"
+                                                        t-att-disabled="confirmed or state.busy" title="Quitar de la sesión: el producto conserva los datos que tiene hoy"
+                                                        t-att-aria-label="'Quitar ' + (line.new_name || line.old_name || 'Nuevo producto')" t-on-click="() => this.removeLine(line)">
+                                                    <i class="fa fa-trash-o" aria-hidden="true"/>
+                                                </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 </tbody>
                             </table>
                         </div>
 
-                        <!-- Pendientes: informativos, para saber qué falta antes de generar claves (punto abierto 3.3.1) -->
+                        <!-- Pendientes: aviso de la regla de liberación al salir o generar claves -->
                         <div t-if="pendingLines.length" class="o_bac_pending" role="status">
                             <div class="o_bac_pending_head">
                                 <i class="fa fa-clock-o" aria-hidden="true"/>
                                 <strong><t t-esc="pendingLines.length"/> producto(s) <t t-esc="pendingLines.some((line) => line.is_new_product) ? 'por completar' : 'sin marca ni folio'"/></strong>
-                                <span class="o_bcw_muted">— confirma la marca desde Editar en el paso 2 o continúa el alta pendiente.</span>
+                                <span class="o_bcw_muted">— edítalos con el lápiz para asignar la marca. Al guardar y salir o generar claves se liberan de la sesión y conservan los datos que tienen hoy en el catálogo.</span>
                             </div>
-                            <ul class="o_bac_pending_list">
-                                <li t-foreach="pendingLines" t-as="line" t-key="line.id">
-                                    <span class="o_bac_code_pending o_bcw_mono" t-esc="line.display_code"/>
-                                    <span t-esc="line.new_name or line.old_name or 'Nuevo producto'"/>
-                                    <button t-if="line.is_new_product" type="button" class="btn btn-sm btn-link"
-                                            t-att-disabled="confirmed or state.busy" t-on-click="() => this.editLine(line)">Continuar alta</button>
-                                </li>
-                            </ul>
                         </div>
 
                         <p class="o_bcw_hint">
-                            El orden lo define el sistema: marca y, dentro de cada marca, folio consecutivo. El folio se reserva al confirmar la marca y no cambia después.
+                            El orden lo define el sistema: pendientes de marca primero; después marca y, dentro de cada marca, folio consecutivo. El folio se reserva al confirmar la marca y no cambia después.
                             <t t-if="classifiedLines.some((l) => l.preserve_reference)"> Los productos con <i class="fa fa-lock" aria-hidden="true"/> ya tenían clave con esta marca: conservan referencia y nombre.</t>
                             <t t-if="classifiedLines.some((l) => l.reclassify_from or l.reclassified)"> Los productos <span class="text-danger fw-bold">en rojo</span> tenían clave completa de otra clasificación o de otra marca: <t t-if="confirmed">recibieron una clave nueva.</t><t t-else="">recibirán la clave nueva y su numeración cambiará.</t></t>
                         </p>
@@ -404,8 +407,8 @@
             <button t-if="state.stage &lt; 3" class="btn btn-sm btn-primary" t-on-click="next">
                 Siguiente <i class="fa fa-arrow-right"/>
             </button>
-            <button t-else="" class="btn btn-sm btn-primary" t-att-disabled="!lines.length or confirmed or state.busy or pendingLines.length"
-                    t-att-title="pendingLines.length ? 'Hay productos sin marca o folio: asígnalos desde Editar en el paso 2.' : ''" t-on-click="confirm">
+            <button t-else="" class="btn btn-sm btn-primary" t-att-disabled="!classifiedLines.length or confirmed or state.busy"
+                    t-att-title="pendingLines.length ? 'Hay productos sin marca ni folio: se liberarán de la sesión al generar claves (se pide confirmación).' : ''" t-on-click="confirm">
                 Generar claves <i class="fa fa-arrow-right"/>
             </button>
         </footer>

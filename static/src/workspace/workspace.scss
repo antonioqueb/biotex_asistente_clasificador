@@ -41,14 +41,17 @@
     .o_bac_w_act { width: 120px; white-space: nowrap; }
     .o_bac_actions { display: flex; align-items: center; gap: 6px; }
     .o_bac_edit { width: auto; padding: 0 10px; gap: 6px; font-weight: 600; }
+    .o_bac_added { display: inline-flex; align-items: center; gap: 4px; color: #15803d; font-weight: 600; white-space: nowrap; }
     .o_bac_table tbody tr.o_bac_row_in_session td { background: #f8fafc; }
     .o_bac_table tbody tr.o_bac_row_in_session:hover td { background: #f1f5f9; }
     .o_bac_table tbody tr.o_bcw_row_reclassified td { background: #fef3f2; }
 
-    // paso 3: clasificados; la columna Acciones abre el modal de edición
+    // paso 3: todos los productos de la sesión; la columna Acciones abre el modal de edición (y quita pendientes)
     .o_bac_table_done td { vertical-align: top; }
-    .o_bac_w_act3 { width: 72px; text-align: center; white-space: nowrap; }
-    .o_bac_edit3 { color: var(--bcw-brand); border-color: var(--bcw-brand-soft); }
+    .o_bac_w_act3 { width: 132px; white-space: nowrap; }
+    .o_bac_edit3 { width: auto; padding: 0 10px; gap: 6px; font-weight: 600; color: var(--bcw-brand); border-color: var(--bcw-brand-soft); }
+    .o_bac_table_done tbody tr.o_bac_row_pending td { background: #fffbf5; }
+    .o_bac_table_done tbody tr.o_bac_row_pending:hover td { background: #fff4e5; }
     .o_bac_edit3:hover:not(:disabled) { background: var(--bcw-brand-soft); color: #1d4ed8; }
     .o_bac_brand_code { color: var(--bcw-brand); font-weight: 700; }
     .o_bac_pending {

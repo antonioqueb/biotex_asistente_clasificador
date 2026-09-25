@@ -16,7 +16,10 @@ Reglas de esta variante:
   marcado como reclasificado; el asistente avisa antes con ambas claves.
 * Un folio reservado no se devuelve al cambiar de marca ni al quitar la línea (misma política que el
   resto del catálogo: la numeración es identidad, puede haber saltos).
-* No se confirma la sesión mientras exista una línea sin marca o sin folio.
+* No se confirma la sesión mientras exista una línea sin marca o sin folio. El asistente, antes de
+  "Guardar y salir" o de "Generar claves", **libera** esas líneas (``clasificador_release_pending``):
+  el producto sale de la sesión y conserva la clave, el nombre y los datos que tiene en el catálogo,
+  porque nada se escribe en la ficha hasta confirmar.
 * Cada folio recuerda la raíz (grupo, familia y clasificador) con la que se reservó (``folio_root``).
   Al guardar desde el modal, si la raíz de la sesión sigue siendo la misma se conservan marca y folio y
   solo se refresca la referencia (por si cambiaron las etiquetas); si la raíz cambió, el folio ya no
@@ -141,7 +144,7 @@ class ClassificationSession(models.Model):
             pending = session._pending_lines()
             if pending:
                 raise UserError('No es posible generar las claves: %d producto(s) sin marca o folio asignado:\n- %s\n'
-                                'Asigne la marca desde Editar en el paso 2.' % (
+                                'Asigne la marca desde Editar en el paso 3 o libérelos de la sesión.' % (
                                     len(pending), '\n- '.join(pending.mapped('display_name'))))
         return super().action_confirm(expected_revision=expected_revision)
 
@@ -259,11 +262,12 @@ class ClassificationSession(models.Model):
         return images[:MAX_GALLERY_IMAGES]
 
     def clasificador_edit_product(self, product_id):
-        """Editar desde el paso 2: si el producto aún no está en la sesión se agrega (marca pendiente).
+        """Agrega el producto a la sesión si aún no está (marca pendiente) y devuelve su línea.
 
-        Así se puede clasificar sin pasar antes por "+Agregar". Un producto de otra sesión en curso no
-        se toma; un producto con clave de otra clasificación llega aquí después de que el usuario acepta
-        el aviso en pantalla.
+        El paso 2 agrega con ``workspace_add_products`` y la edición se hace en el paso 3; este método se
+        conserva para abrir un producto directo en el editor (Enter sobre un producto ya agregado, lector).
+        Un producto de otra sesión en curso no se toma; un producto con clave de otra clasificación llega
+        aquí después de que el usuario acepta el aviso en pantalla.
         """
         self.ensure_one()
         self._lock_workspace()
@@ -280,6 +284,28 @@ class ClassificationSession(models.Model):
         if not line:
             raise UserError('El producto ya no existe o no es visible para este usuario.')
         return {'line_id': line.id, 'session': self._workspace_session()}
+
+    def clasificador_release_pending(self):
+        """Libera de la sesión las líneas sin marca ni folio (y los borradores de alta sin producto).
+
+        Se llama antes de "Guardar y salir" y de "Generar claves". Nada de la línea se ha escrito en la
+        ficha (eso ocurre solo al confirmar), así que el producto vuelve a estar disponible con la clave,
+        el nombre y los datos que tiene actualmente en el catálogo. Las líneas con marca y folio no se
+        tocan. Un folio ya reservado por una línea liberada no se devuelve al contador (misma política
+        que al quitar una línea). Devuelve la sesión y los nombres liberados.
+        """
+        self.ensure_one()
+        self._lock_workspace()
+        self._check_editable()
+        if not self.brand_per_line:
+            raise UserError('Esta sesión no asigna la marca por producto.')
+        pending = self._pending_lines()
+        released = pending.mapped('display_name')
+        if pending:
+            pending.unlink()
+        data = self._workspace_session()
+        data['released'] = released
+        return data
 
     def clasificador_set_line_brand(self, line_id, brand_id):
         """Confirma la marca de una línea y reserva su folio contra la llave exacta GG-FFF-CCC-MMMM.
