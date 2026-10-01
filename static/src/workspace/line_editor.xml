@@ -114,7 +114,7 @@
                                                     t-att-aria-invalid="!!state.errors.uom_id" t-att-class="{ 'o_bcw_input--error': state.errors.uom_id }"
                                                     t-att-disabled="!canChangeBaseUom" t-on-change="onBaseUomChange" autofocus="autofocus">
                                                 <option value="" t-att-selected="!state.draft.uom_id">—</option>
-                                                <option t-foreach="state.catalogs.uoms" t-as="uom" t-key="uom.id" t-att-value="uom.id"
+                                                <option t-foreach="baseUoms" t-as="uom" t-key="uom.id" t-att-value="uom.id"
                                                         t-att-selected="uom.id === state.draft.uom_id" t-esc="uom.name"/>
                                             </select>
                                             <button type="button" class="btn btn-link btn-sm p-0 o_bac_unit_change" t-on-click="cancelUomEdit">Listo</button>

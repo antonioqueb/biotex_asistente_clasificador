@@ -171,7 +171,7 @@ function applyInheritance(window, xmlSources) {
     };
     w.notifications = []; w.dialogs = [];
     const sources = [
-        'classification/reference.js', 'classification/image_gallery_dialog.js', 'classification/review_dialog.js', 'classification/line_editor.js',
+        'classification/reference.js', 'classification/uoms.js', 'classification/image_gallery_dialog.js', 'classification/review_dialog.js', 'classification/line_editor.js',
         'classification/classification.js', 'fields/class_badge.js',
     ].map((f) => strip(read(path.join(CATALOG, f)))).concat(['line_editor.js', 'workspace.js'].map((f) => strip(read(path.join(MINE, f)))));
     w.eval(`const {Component, useState, useRef, onWillStart, onWillUnmount, onMounted, onPatched, markup} = owl;
